@@ -11,6 +11,8 @@ from urllib.request import Request, urlopen
 
 from citation_audit import audit_report_citations, reconcile_citations
 from source_data import load_source_records
+from pillar_relationships import analyze_relationships, relationship_facts
+from lunar_python.util import LunarUtil
 
 MODEL = "glm-4.7-flash"
 ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
@@ -35,12 +37,12 @@ PROVIDERS = {
         },
     },
 }
-PROMPT_VERSION = "ziping-eight-steps-v2-budget-citations"
+PROMPT_VERSION = "ziping-eight-steps-v4-month-day-relations"
 STEP_TITLES = (
     "核定排盘事实", "日主与月令", "全局结构", "旺衰强弱",
     "格局成败与救应", "取用与喜忌", "大运流年资料检查", "结论与待核条件",
 )
-NO_LUCK_DATA = "当前排盘未提供大运、起运年龄及流年作用计算，暂不推断大运流年。"
+NO_LUCK_DATA = "本次按原局解读，未纳入大运、起运年龄及流年作用资料，暂不推断大运流年。"
 
 
 class AIError(ValueError):
@@ -171,7 +173,52 @@ def _http_error_message(error: HTTPError, provider: str = "zhipu") -> str:
     return f"{label}：{message}"
 
 
-def build_context(chart: dict, retrieval: dict, records: list[dict] | None = None) -> dict:
+def _validated_transit(transit: dict, pillars: dict) -> dict:
+    """Whitelist the selected period; never forward the session or raw birth form."""
+    try:
+        if not isinstance(transit, dict) or transit.get("四柱") != pillars:
+            raise ValueError
+        cycle, annual, start = transit["大运"], transit["流年"], transit["起运"]
+        years = (cycle["起始年"], annual["年份"], cycle["结束年"])
+        if not all(type(year) is int for year in years) or not 1 <= years[0] <= years[1] <= years[2] <= 9999:
+            raise ValueError
+        if annual["干支"] not in LunarUtil.JIA_ZI or cycle["干支"] not in ("", *LunarUtil.JIA_ZI):
+            raise ValueError
+        if not cycle["干支"] and cycle["名称"] != "未起运":
+            raise ValueError
+        if start["顺逆"] not in ("顺行", "逆行") or start["算法"] != "按时辰起运":
+            raise ValueError
+        for value in (cycle["名称"], start["年龄"], start["交运时刻"]):
+            if not isinstance(value, str) or not value.strip() or len(value) > 80:
+                raise ValueError
+        result = {"大运": {key: cycle[key] for key in ("名称", "干支", "起始年", "结束年")},
+                  "流年": {key: annual[key] for key in ("年份", "干支")},
+                  "起运": {key: start[key] for key in ("年龄", "交运时刻", "顺逆", "算法")},
+                  "范围说明": "只分析当前选择范围；大运年度编排不代表当年元旦交运，交运年份需复核精确交接。"}
+        if "流月" in transit or "流日" in transit:
+            from professional_chart import flow_days, flow_months
+
+            month, day = transit["流月"], transit["流日"]
+            index = month["月序"]
+            if type(index) is not int or not 0 <= index < 12:
+                raise ValueError
+            expected_month = flow_months(annual["年份"], pillars["日柱"][0])[index]
+            for key, expected in (("干支", "pillar"), ("起始时刻", "start"), ("结束时刻", "end")):
+                if month[key] != expected_month[expected]:
+                    raise ValueError
+            expected_day = next((d for d in flow_days(annual["年份"], index, pillars["日柱"][0]) if d["id"] == day["日期"]), None)
+            if expected_day is None or day["干支"] != expected_day["pillar"]:
+                raise ValueError
+            result["流月"] = {"月序": index, "名称": expected_month["label"], "干支": expected_month["pillar"],
+                              "起始时刻": expected_month["start"], "结束时刻": expected_month["end"]}
+            result["流日"] = {"日期": expected_day["id"], "干支": expected_day["pillar"]}
+            result["节月口径"] = "按节气时刻切换；交节日可能同时出现在相邻节月，以所选节月区间为准。流日沿用Exact2换日口径。"
+        return result
+    except (ValueError, KeyError, TypeError):
+        raise AIError("当前运程资料与命盘不一致或不完整，请重新排盘并选择运年、流月和流日。") from None
+
+
+def build_context(chart: dict, retrieval: dict, records: list[dict] | None = None, *, transit: dict | None = None) -> dict:
     """Include all Ziping text and complete source paragraphs from this retrieval."""
     if not retrieval.get("success"):
         raise AIError("请先完成古籍检索，再生成 AI 解读。")
@@ -205,6 +252,18 @@ def build_context(chart: dict, retrieval: dict, records: list[dict] | None = Non
     facts = {key: chart[key] for key in ("四柱", "四柱详情", "检索条件", "日柱换日规则", "时间说明") if key in chart}
     if set(facts.get("四柱", {})) != {"年柱", "月柱", "日柱", "时柱"}:
         raise AIError("四柱资料不完整，请重新排盘。")
+    relationship_args = {}
+    if transit is not None:
+        period = _validated_transit(transit, facts["四柱"])
+        facts["当前岁运"] = period
+        relationship_args = {"luck_pillar": period["大运"]["干支"], "annual_pillar": period["流年"]["干支"],
+                             "luck_label": f"大运{period['大运']['起始年']}—{period['大运']['结束年']}",
+                             "annual_label": f"流年{period['流年']['年份']}"}
+        if "流月" in period:
+            relationship_args.update({"monthly_pillar": period["流月"]["干支"], "daily_pillar": period["流日"]["干支"],
+                                      "monthly_label": f"流月{period['流月']['名称']}（{period['流月']['起始时刻']}起）",
+                                      "daily_label": f"流日{period['流日']['日期']}"})
+    facts["干支关系"] = relationship_facts(analyze_relationships(facts["四柱"], **relationship_args))
     sources = [{
         "source_id": r["source_id"], "book_name": r["book_name"], "chapter": r["section"],
         "line_number": f"{r['line_number']}-{r.get('end_line_number', r['line_number'])}",
@@ -214,7 +273,7 @@ def build_context(chart: dict, retrieval: dict, records: list[dict] | None = Non
         "facts": facts, "sources": sources,
         "method_book": "子平真诠全文，含底本所附评注；原文与评注尚未完全分离",
         "missing_support_books": missing,
-        "missing_data": ["大运干支", "起运年龄", "流年作用计算"],
+        "missing_data": [] if transit is not None else ["大运干支", "起运年龄", "流年作用计算"],
     }
     return context
 
@@ -232,10 +291,18 @@ def build_messages(context: dict) -> list[dict]:
 月令先形成候选主线；强弱须结合根气和全局作用，不能只数五行或以得令断强弱。不得见合即化，不得无条件判从格或化格。
 明确区分月令取用、相神救应、扶抑需要、调候需要；说明条件、反面证据与不确定性，避免机械的身弱补印比、身旺一概克泄。
 sources 中《子平真诠》包含正文及后人评注，不能把整段都署为沈孝瞻原文。其他书只作对应条文参考，不能凭相似字词确认条文适用。
-只基于所给事实解读。本次缺少大运、起运年龄和流年作用计算，第7步只说明资料缺失，不推算或编造具体年份事件。
+只基于所给事实解读。facts.干支关系是程序按柱位计算的关系表命中，不是成化、喜忌或事件结论。先核对参与位置与原局/大运/流年/流月/流日范围，不把半合、拱合和完整三合累加计算力量。原局月令不因运年或流月、流日而替换；流月只是当前节月的时令线索，不据短期关系重新断原局格局。
 只输出 JSON，不输出隐藏思考过程。每一步给出简短结论、可核对的命盘证据、文献引用和待核条件；传统解释不能写成保证发生的事实。
 JSON 格式：{"pillars":{"年柱":"...","月柱":"...","日柱":"...","时柱":"..."},"steps":[{"step":1,"conclusion":"...","chart_evidence":["..."],"citations":[{"source_id":"所给ID","quote":"逐字摘录的短句"}],"uncertainties":["..."]}],"summary":"...","limitations":["..."]}。
 steps 必须恰好8项，step按1至8顺序。pillars必须逐字复制facts.四柱。第2至6步每步至少一个引用；其余步骤可不引用。source_id必须来自所给sources，quote必须是该来源text中连续出现的短句，不能改字、加省略号或混合不同段落。每步结论约100至250字。"""
+    if context["facts"].get("当前岁运"):
+        system += "\n本次提供了facts.当前岁运及关系计算。第7步结合原局喜忌，按所给运年及可选流月、流日分层解释触发的具体柱位关系，至少引用一条适用原文；逐项区分配对命中与合化待核。各层的合、冲并列保留，不自动认定合解冲或冲开库。不得把作用关系直接断为具体事件，也不得编造其他运年、日期或交运时间。"
+        if "流月" in context["facts"]["当前岁运"]:
+            system += "\n本次已提供选定流月与流日，必须核对具体节月区间和公历日期，区分流月新增与流日新增；不得把交节日整天套用为同一节月，亦不得将短期作用延伸成全年结论。"
+        else:
+            system += "\n本次没有选择流月、流日范围，不推断具体月份或日期。"
+    else:
+        system += "\n本次没有选择岁运分析，缺少大运、起运年龄和流年作用计算，第7步只说明资料缺失，不推算或编造具体年份事件。"
     system += "\n参考文献按书名、篇章组织在source_chapters中，每个paragraph的source_id是引用编号。先判断相关篇章的适用条件，再使用原文。引用时复制完整短编号（如S001），不要生成哈希。摘录建议8至50字，只摘连续原句。"
     groups = {}
     for source in context["sources"]:
@@ -332,7 +399,7 @@ def validate_report(report: dict, context: dict) -> None:
             raise AIError("报告的引用格式不正确，请重新生成。")
         if not all(isinstance(c.get("source_id"), str) and isinstance(c.get("quote"), str) for c in citations):
             raise AIError("报告的引用编号和摘录必须为文字，请重新生成。")
-        if 2 <= number <= 6 and not citations:
+        if (2 <= number <= 6 or (number == 7 and context["facts"].get("当前岁运"))) and not citations:
             citation_issues.append({"step": number, "issue": "missing_citation", "source_id": "", "quote": ""})
         for citation in citations:
             issues = audit_report_citations([{"citations": [citation]}], context["sources"])
@@ -371,11 +438,12 @@ def generate_report(api_key: str, context: dict, *, opener=None, provider: str =
         raise AIError("模型报告未形成完整的 JSON，已停止展示，请重新生成。") from None
     report, citation_changes = reconcile_citations(report, context["sources"])
     validate_report(report, context)
-    # This project does not calculate these facts yet; do not let model knowledge fill them in.
-    report["steps"][6] = {
-        "step": 7, "conclusion": NO_LUCK_DATA, "chart_evidence": [], "citations": [],
-        "uncertainties": ["需要程序提供大运干支、起运年龄及流年作用资料。"],
-    }
+    # The user chooses whether this report includes periods; never fill omitted data.
+    if not context["facts"].get("当前岁运"):
+        report["steps"][6] = {
+            "step": 7, "conclusion": NO_LUCK_DATA, "chart_evidence": [], "citations": [],
+            "uncertainties": ["如需分析岁运，请在解读范围选择‘原局＋当前大运、流年’。"],
+        }
     return {"report": report, "provider": provider, "model": model.strip(), "thinking": thinking,
             "prompt_version": PROMPT_VERSION, "usage": data.get("usage", {}),
             "context_budget": {**context["context_budget"], **budget}, "citation_changes": citation_changes}

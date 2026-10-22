@@ -91,8 +91,30 @@ def render_ai_panel(chart: dict, retrieval: dict) -> None:
     if not retrieval or not retrieval.get("success"):
         st.info("请先点击‘古籍检索’，再生成解读。")
         return
+    selected_transit = st.session_state.get("professional_transit")
+    has_transit = isinstance(selected_transit, dict) and selected_transit.get("四柱") == chart.get("四柱")
+    scopes = ["原局解读", "原局＋当前大运、流年"] if has_transit else ["原局解读"]
+    if has_transit and "流月" in selected_transit and "流日" in selected_transit:
+        scopes.append("原局＋当前运年、流月、流日")
+    if st.session_state.get("ai_analysis_scope") not in scopes:
+        st.session_state["ai_analysis_scope"] = scopes[0]
+    analysis_scope = st.radio("解读范围", scopes, horizontal=True, key="ai_analysis_scope")
+    transit = dict(selected_transit) if has_transit and analysis_scope != "原局解读" else None
+    if transit and analysis_scope == "原局＋当前大运、流年":
+        transit.pop("流月", None)
+        transit.pop("流日", None)
+    if transit:
+        cycle, annual = transit["大运"], transit["流年"]
+        st.caption(f"当前大运：{cycle['干支'] or '未起运'}（{cycle['起始年']}—{cycle['结束年']}）；"
+                   f"流年：{annual['年份']} {annual['干支']}。在专业细盘切换后，此处同步更新。")
+        if "流月" in transit:
+            month, day = transit["流月"], transit["流日"]
+            st.caption(f"流月：{month['名称']} {month['干支']}（{month['起始时刻']} 至 {month['结束时刻']}，不含结束时刻）；"
+                       f"流日：{day['日期']} {day['干支']}。")
+        else:
+            st.caption("当前解读范围仅包含运年；如需月日，选择‘原局＋当前运年、流月、流日’。")
     try:
-        context = build_context(chart, retrieval)
+        context = build_context(chart, retrieval, transit=transit)
         context = prepare_context(context, provider=provider, model=model, thinking=thinking, custom_window=custom_window)
     except (AIError, ValueError, OSError) as error:
         st.error(f"资料准备失败：{error}")
@@ -119,7 +141,10 @@ def render_ai_panel(chart: dict, retrieval: dict) -> None:
             st.warning(f"受窗口预算限制，本次省略其他古籍的 {budget['omitted_paragraphs']} 个完整段落；未截断段落或《子平真诠》。")
 
     st.write("分析依据：《子平真诠》全文与所附评注，以及本次检索到的其他古籍原文。")
-    st.caption(f"当前选择：{platform['name']} / {model or '请填写模型 ID'}。点击生成后，会把当前四柱、十神和古籍资料发送至{platform['name']}。当前资料不包含大运与起运年龄；本次不推断大运流年。")
+    scope_caption = "同时发送当前选定岁运、起运资料及干支关系；只解释此范围。" if transit else "本次仅分析原局，不发送岁运资料。"
+    if transit and "流月" in transit:
+        scope_caption = "同时发送当前选定运年、流月、流日、起运资料及干支关系；只解释此范围。"
+    st.caption(f"当前选择：{platform['name']} / {model or '请填写模型 ID'}。点击生成后，会把当前四柱、十神、干支关系和古籍资料发送至{platform['name']}。{scope_caption}")
     if context["missing_support_books"]:
         st.caption("本次未取得可引用的相关正文：" + "、".join(context["missing_support_books"]))
     if not api_key:

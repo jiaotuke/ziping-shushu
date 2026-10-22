@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{color-scheme:dark;--gold:#d0a45d;--muted:#a9a298;--line:#33343a}*{box-sizing:border-box}body{margin:0;color:#e9e4db;background:#0c0d10;font:14px/1.55 "Microsoft YaHei",sans-serif}button{font:inherit;cursor:pointer}.wrap{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:linear-gradient(140deg,#191a1d,#0e0f12)}.eyebrow{color:var(--gold);letter-spacing:.22em;font-size:12px;padding:18px 20px 5px}.table-scroll{overflow-x:auto;padding:0 10px}table{border-collapse:collapse;width:100%;min-width:760px;text-align:center}th,td{padding:9px 8px;border-bottom:1px solid #292a30;vertical-align:top}th{color:#bfb6a6;font-weight:400;padding-top:15px}th:first-child,td:first-child{position:sticky;left:0;background:#17181c;color:var(--muted);text-align:left;min-width:58px;z-index:1;font-size:12px}th.flow{color:var(--gold)}td.glyph{font:500 29px/1.25 "STSong",serif;padding:6px 8px}.hidden{display:flex;flex-direction:column;gap:3px;white-space:nowrap;font-size:12px}.stars{color:#c6a870;font-size:11px;max-width:130px}.summary{background:#111216;border-top:1px solid var(--line);padding:15px 20px;color:#d7cbb4;font-size:13px}.detail{padding:0 20px 13px;color:var(--muted);font-size:11px}.wheel-row{display:grid;grid-template-columns:40px 26px minmax(0,1fr) 26px;gap:6px;align-items:center;border-top:1px solid #303137;padding:12px 10px}.wheel-label{font:20px "STSong",serif;writing-mode:vertical-rl;letter-spacing:.25em;color:#c8b58e;margin:auto}.arrow{border:1px solid #3b3b40;border-radius:6px;background:#222328;color:#d2bf99;height:44px;padding:0}.strip{display:flex;gap:8px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;scrollbar-width:thin;scrollbar-color:#665334 #18191e;padding:3px 1px 9px}.tile{flex:0 0 94px;scroll-snap-align:start;border:1px solid #33343b;border-radius:9px;background:#191b20;color:#d8d2c7;text-align:center;padding:9px 6px;transition:border-color .15s,background .15s}.tile:hover{border-color:#9f804c}.tile.selected{border-color:var(--gold);background:#342b1d;box-shadow:inset 0 0 0 1px #806235}.tile .label{font-size:13px;white-space:nowrap}.tile .note{font-size:10px;color:#aaa49a;white-space:nowrap;margin:3px 0}.tile .chars{font:25px "STSong",serif;letter-spacing:4px;margin:4px 0}.tile .period{font-size:10px;color:#b7ac99;white-space:nowrap}.hint{font-size:11px;color:#a39c90;padding:9px 20px 15px}button:focus-visible{outline:2px solid #e6c17d;outline-offset:2px}@media(max-width:600px){.tile{flex-basis:86px}.wheel-row{gap:4px;padding:10px 6px;grid-template-columns:30px 23px minmax(0,1fr) 23px}.summary{padding:12px;font-size:12px}.detail{padding:0 12px 12px}.eyebrow{padding-left:12px}}
+.relationships{border-top:1px solid var(--line);padding:20px;background:#111216}.relationships h2{font:22px "STSong",serif;color:#dfc58f;margin:0 0 8px}.relation-context,.relation-help{font-size:12px;color:var(--muted);margin:5px 0 12px}.relation-tabs{display:flex;gap:6px;overflow-x:auto;margin:15px 0;scrollbar-width:thin;padding-bottom:5px}.relation-tab{border:1px solid #3c3b39;background:#1b1c20;border-radius:7px;color:#bcb5a8;padding:8px 12px;white-space:nowrap;font-size:12px}.relation-tab.active{border-color:var(--gold);color:#edcd90;background:#30281c}.relation-tab .count{opacity:.7;margin-left:5px}.relation-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.relation-card,.relation-review{border:1px solid #333339;border-radius:9px;background:#191a1f;padding:13px;min-width:0}.relation-head{display:flex;gap:8px;justify-content:space-between;align-items:flex-start;margin-bottom:8px}.relation-title{color:#e6d6b6;font-size:14px}.relation-badge{color:#b6a27e;background:#28251f;border-radius:4px;padding:2px 6px;font-size:10px;flex-shrink:0}.relation-members{color:#cac2b3;font-size:12px;line-height:1.9;overflow-wrap:anywhere}.relation-members span{white-space:nowrap}.relation-note{font-size:11px;color:#aaa497;margin-top:7px}.relation-empty{padding:18px;border:1px dashed #414047;border-radius:8px;color:#aaa49a;font-size:12px}.relation-reviews{display:grid;gap:8px}.relation-review{padding:0}.relation-review summary{cursor:pointer;list-style:none;padding:13px}.relation-review summary::-webkit-details-marker{display:none}.review-heading{display:flex;gap:10px;justify-content:space-between;align-items:center}.review-heading:after{content:'＋';color:#c8ac76}.relation-review[open] .review-heading:after{content:'−'}.review-scope{font-size:10px;color:#a59d8e;margin:5px 0}.review-checks{padding:0 13px 13px;display:grid;gap:10px}.review-check{border-top:1px solid #303137;padding-top:9px;font-size:12px;color:#c9c1b2}.review-check-title{display:flex;gap:10px;margin-bottom:4px;color:#d4c2a1}.check-status{font-size:10px;color:#afa99c}.check-status.review{color:#d5b26d}.relation-help{margin:12px 0 0;font-size:11px}@media(max-width:650px){.relationships{padding:15px 12px}.relation-list{grid-template-columns:1fr}.relation-head{flex-wrap:wrap}.review-heading{flex-wrap:wrap}.relation-tab{padding:8px 10px}}
+</style></head><body><div id="root"></div>
+<script>
+const root=document.getElementById('root');let current=null;let scrolls={};let relationshipTab='annual';
+const openReviews=new Set();let viewIdentity=null;let lastPayloadKey=null;let lastFrameHeight=null;let sizeRequest=0;
+const colors={甲:'#72c982',乙:'#72c982',丙:'#f07870',丁:'#f07870',戊:'#ad8552',己:'#ad8552',庚:'#e7bd45',辛:'#e7bd45',壬:'#438bc5',癸:'#438bc5',子:'#438bc5',丑:'#ad8552',寅:'#72c982',卯:'#72c982',辰:'#ad8552',巳:'#f07870',午:'#f07870',未:'#ad8552',申:'#e7bd45',酉:'#e7bd45',戌:'#ad8552',亥:'#438bc5'};
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function glyph(c){return '<span style="color:'+(colors[c]||'#aaa')+'">'+esc(c||'—')+'</span>';}
+function send(type,extra={}){window.parent.postMessage({isStreamlitMessage:true,type,...extra},'*');}
+function size(){
+  if(sizeRequest)return;
+  sizeRequest=requestAnimationFrame(()=>{
+    sizeRequest=0;
+    const height=Math.ceil(root.getBoundingClientRect().height)+4;
+    if(height===lastFrameHeight)return;
+    lastFrameHeight=height;send('streamlit:setFrameHeight',{height});
+  });
+}
+function reviewKey(review){return JSON.stringify([review.scope,review.id]);}
+function relationMembers(members,stem=false,whole=false){return '<div class="relation-members">'+members.map(n=>'<span>'+esc(n.name)+' '+(whole?glyph(n.stem)+glyph(n.branch):glyph(stem?n.stem:n.branch))+'</span>').join(' <span aria-hidden="true">↔</span> ')+'</div>';}
+function relationshipSection(data){
+  if(!data)return '';
+  const levels=['natal','luck','annual','monthly','daily'],names={luck:'大运',annual:'流年',monthly:'流月',daily:'流日'};
+  const scopes=Object.fromEntries(levels.map((s,i)=>[s,i===0?'原局范围':'原局＋当前'+levels.slice(1,i+1).filter(k=>data.nodes.some(n=>n.scope===k)).map(k=>names[k]).join('、')]));
+  if(!data.nodes.some(n=>n.scope==='annual')&&relationshipTab==='annual')relationshipTab='natal';
+  const tabs=[...data.groups.map(g=>({id:g.id,label:g.label,count:g.events.length})),{id:'reviews',label:'合化待核',count:data.reviews.length}];
+  const active=relationshipTab==='reviews'?null:data.groups.find(g=>g.id===relationshipTab);
+  const selected=data.nodes.filter(n=>n.scope!=='natal').map(n=>esc(n.name)+' '+glyph(n.stem)+glyph(n.branch));
+  let html='<section class="relationships" aria-label="原局与岁运关系"><h2>原局与岁运关系</h2><div class="relation-context">'+(selected.length?selected.join('　｜　'):'当前仅展示原局关系')+'</div><div class="relation-context">'+esc(data.summary)+'</div>';
+  html+='<div class="relation-tabs" role="tablist" aria-label="干支关系范围">'+tabs.map(t=>'<button id="relation-tab-'+t.id+'" class="relation-tab '+(t.id===relationshipTab?'active':'')+'" data-relation-tab="'+t.id+'" role="tab" aria-controls="relation-panel" aria-selected="'+(t.id===relationshipTab)+'">'+esc(t.label)+'<span class="count">'+t.count+'</span></button>').join('')+'</div>';
+  html+='<div id="relation-panel" role="tabpanel" aria-labelledby="relation-tab-'+esc(relationshipTab)+'">';
+  if(active){
+    if(!active.events.length)html+='<div class="relation-empty">'+(active.id==='luck'&&!data.nodes.some(n=>n.scope==='luck')?'当前尚未起运或未提供运程资料，无大运干支参与。':active.id!=='natal'&&!data.nodes.some(n=>n.scope===active.id)?'尚未提供当前'+esc(names[active.id])+'。':'当前范围未命中本项目已实现的关系表；不代表不存在其他作用。')+'</div>';
+    else html+='<div class="relation-list">'+active.events.map(r=>'<article class="relation-card"><div class="relation-head"><strong class="relation-title">'+esc(r.label)+'</strong><span class="relation-badge">'+esc(r.stage_note)+'</span></div>'+relationMembers(r.members,r.kind.startsWith('stem_'))+(r.note?'<div class="relation-note">'+esc(r.note)+'</div>':'')+'</article>').join('')+'</div>';
+  }else{
+    html+='<div class="relation-context">以下记录可核对的条件线索。展开查看：出现同类五行、没有命中冲刑，都不能单独证明成化。</div>';
+    if(!data.reviews.length)html+='<div class="relation-empty">当前范围未命中五合、六合或完整三合、三会组合。</div>';
+    else html+='<div class="relation-reviews">'+data.reviews.map(r=>'<details class="relation-review" data-review-key="'+esc(reviewKey(r))+'"'+(openReviews.has(reviewKey(r))?' open':'')+'><summary><div class="review-heading"><strong class="relation-title">'+esc(r.label)+'</strong><span class="relation-badge">'+esc(r.element?'化'+r.element+'待核':'化神口径待核')+'</span></div><div class="review-scope">'+esc(scopes[r.scope])+'</div>'+relationMembers(r.members,false,true)+'</summary><div class="review-checks">'+r.checks.map(c=>'<div class="review-check"><div class="review-check-title">'+esc(c.label)+'<span class="check-status '+esc(c.status)+'">'+(c.status==='review'?'待核':'已记录')+'</span></div>'+esc(c.text)+'</div>').join('')+'</div></details>').join('')+'</div>';
+  }
+  return html+'</div><div class="relation-help">范围为原局与当前所选大运、流年、流月、流日；每条关系按最细的参与层级归类。计数为带位置的记录条数，不是吉凶分数。原文依据见下方说明。</div></section>';
+}
+function render(p){
+  const nextView=JSON.stringify([p.natal.map(n=>[n.name,n.pillar]),p.selection??null]);
+  // Native <details> state lives outside the HTML template. Preserve it across
+  // genuine renders, but clear it when the chart or selected period changes.
+  if(nextView===viewIdentity){
+    root.querySelectorAll('details[data-review-key]').forEach(el=>{if(el.open)openReviews.add(el.dataset.reviewKey);else openReviews.delete(el.dataset.reviewKey);});
+  }else openReviews.clear();
+  viewIdentity=nextView;
+  document.querySelectorAll('.strip').forEach(el=>scrolls[el.dataset.kind]=el.scrollLeft);
+  const cols=[...(p.flows||[]).slice(0,2),...p.natal,...(p.flows||[]).slice(2)];
+  const row=(label,fn,cls='')=>'<tr><td>'+label+'</td>'+cols.map(c=>'<td class="'+cls+'">'+fn(c)+'</td>').join('')+'</tr>';
+  let table='<table><thead><tr><th>日期</th>'+cols.map(c=>'<th class="'+((p.flows||[]).includes(c)?'flow':'')+'">'+esc(c.name)+'</th>').join('')+'</tr></thead><tbody>';
+  table+=row('主星',c=>esc(c.god));table+=row('天干',c=>glyph(c.pillar?.[0]),'glyph');table+=row('地支',c=>glyph(c.pillar?.[1]),'glyph');
+  table+=row('藏干',c=>'<div class="hidden">'+(c.hidden||[]).map(h=>'<span>'+glyph(h.stem)+' '+esc(h.god)+'</span>').join('')+'</div>');
+  for(const [label,key] of [['星运','star'],['自坐','seat'],['空亡','void'],['纳音','nayin']])table+=row(label,c=>esc(c[key]||'—'));
+  table+=row('神煞',c=>c.stars?.length?c.stars.map(esc).join('<br>'):'—','stars');table+='</tbody></table>';
+  let html='<div class="wrap"><div class="eyebrow">专业细盘 · 原局与运程</div><div class="table-scroll">'+table+'</div><div class="summary">'+esc(p.summary)+'</div><div class="detail">'+esc(p.detail||'')+'</div>';
+  for(const row of p.rows||[]){html+='<section class="wheel-row"><div class="wheel-label">'+esc(row.label)+'</div><button class="arrow" data-scroll="'+row.kind+'" data-dir="-1" aria-label="向左滚动'+row.label+'">‹</button><div class="strip" data-kind="'+row.kind+'">';
+    for(const item of row.items){const selected=p.selection[row.kind]===item.id;html+='<button class="tile '+(selected?'selected':'')+'" data-kind="'+row.kind+'" data-value="'+esc(item.id)+'" aria-pressed="'+selected+'"><div class="label">'+esc(item.label)+'</div><div class="note">'+esc(item.note||'')+'</div><div class="chars">'+(item.pillar?glyph(item.pillar[0])+glyph(item.pillar[1]):'—')+'</div><div class="period">'+esc(item.period||'')+'</div></button>';}
+    html+='</div><button class="arrow" data-scroll="'+row.kind+'" data-dir="1" aria-label="向右滚动'+row.label+'">›</button></section>';}
+  html+='<div class="hint">左右滑动或滚轮浏览，点击卡片选择；上方细盘与岁运关系随选择更新。</div>'+relationshipSection(p.relationships)+'</div>';root.innerHTML=html;
+  document.querySelectorAll('.strip').forEach(el=>{const kind=el.dataset.kind;const changed=!current||current.selection?.[kind]!==p.selection?.[kind];if(changed){const selected=el.querySelector('.selected');if(selected)el.scrollLeft=selected.offsetLeft-el.offsetLeft-el.clientWidth/2+selected.clientWidth/2;}else el.scrollLeft=scrolls[kind]||0;
+    el.addEventListener('wheel',e=>{if(Math.abs(e.deltaY)>Math.abs(e.deltaX)&&el.scrollWidth>el.clientWidth){const before=el.scrollLeft;el.scrollLeft+=e.deltaY;if(el.scrollLeft!==before)e.preventDefault();}},{passive:false});});
+  document.querySelectorAll('[data-scroll]').forEach(b=>b.onclick=()=>document.querySelector('.strip[data-kind="'+b.dataset.scroll+'"]').scrollBy({left:Number(b.dataset.dir)*280,behavior:'smooth'}));
+  document.querySelectorAll('.tile').forEach(b=>b.onclick=()=>send('streamlit:setComponentValue',{value:{kind:b.dataset.kind,value:b.dataset.value,event:Date.now().toString()+Math.random().toString(16).slice(2)},dataType:'json'}));
+  document.querySelectorAll('[data-relation-tab]').forEach(b=>b.onclick=()=>{relationshipTab=b.dataset.relationTab;render(current);document.querySelector('#relation-tab-'+relationshipTab)?.focus({preventScroll:true});});
+  root.querySelectorAll('details[data-review-key]').forEach(el=>el.addEventListener('toggle',()=>{
+    if(!el.isConnected)return;
+    if(el.open)openReviews.add(el.dataset.reviewKey);else openReviews.delete(el.dataset.reviewKey);
+    size();
+  }));
+  current=p;size();
+}
+window.addEventListener('message',e=>{
+  if(e.source!==window.parent||e.data?.type!=='streamlit:render')return;
+  const payload=e.data.args?.payload;if(!payload)return;
+  const key=JSON.stringify(payload);
+  // The parent can replay props after a frame-height update. Rebuilding the DOM
+  // on that replay closes native details and causes a resize/render feedback loop.
+  if(key===lastPayloadKey){size();return;}
+  lastPayloadKey=key;render(payload);
+});
+new ResizeObserver(size).observe(root);send('streamlit:componentReady',{apiVersion:1});
+</script></body></html>

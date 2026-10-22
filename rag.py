@@ -121,9 +121,8 @@ def chart_chapter(conditions: dict[str, object], records: list[dict] | None = No
     if chapter in sections:
         return chapter
 
-    # 部分转录本只细分到五行总论，保留元素篇作为较宽的章节范围。
-    element_chapter = f"论{element}"
-    return element_chapter if element_chapter in sections else None
+    # A five-element overview is not a substitute for the requested stem/month.
+    return None
 
 
 def records_in_chapter(

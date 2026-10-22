@@ -124,6 +124,11 @@ def load_source_records(book_name: str | None = None) -> list[dict[str, object]]
                 and not re.search(r"[，。！？；,.!?;]", heading_text)
                 and bool(HEADING_PATTERN.fullmatch(heading_text))
             )
+            # Correct 十一月 headings only for this book; preserve other segmentation.
+            if title == "穷通宝鉴" and re.fullmatch(
+                r"[正一二三四五六七八九十冬腊]+月[甲乙丙丁戊己庚辛壬癸][木火土金水]", heading_text
+            ):
+                is_heading = True
             if is_heading:
                 flush_paragraph()
                 if not chapter_boundaries:

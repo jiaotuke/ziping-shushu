@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from lunar_python import Lunar, Solar
+from lunar_python.util import LunarUtil
 from sanming_shensha import calculate_sanming_shensha
 
 
@@ -103,6 +104,60 @@ def calculate_chart(
         },
         "日柱换日规则": f"lunar-python sect={sect}",
         "时间说明": time_basis,
+    }
+
+
+def calculate_pillars_chart(pillars: dict[str, str]) -> dict[str, object]:
+    """Build the same chart data directly from supplied pillars, without inventing a date."""
+    names = ("年柱", "月柱", "日柱", "时柱")
+    stems = "甲乙丙丁戊己庚辛壬癸"
+    if not isinstance(pillars, dict) or set(pillars) != set(names):
+        raise ValueError("请完整填写年柱、月柱、日柱、时柱。")
+    normalized = {}
+    for name in names:
+        value = pillars[name]
+        value = "".join(value.split()) if isinstance(value, str) else ""
+        if not value:
+            raise ValueError(f"请填写{name}，例如甲子。")
+        if value not in LunarUtil.JIA_ZI:
+            raise ValueError(f"{name}“{value}”不是有效的六十甲子，请填写一个天干和一个地支，例如甲子、乙丑。")
+        normalized[name] = value
+    year, month, day, hour = (normalized[name] for name in names)
+    # Five-tiger month rule, beginning at 寅; five-rat hour rule, beginning at 子.
+    month_index = (_EARTHLY_BRANCHES.index(month[1]) - 2) % 12
+    expected_month = stems[(stems.index(year[0]) % 5 * 2 + 2 + month_index) % 10] + month[1]
+    if month != expected_month:
+        raise ValueError(f"年柱与月柱不一致：按{year[0]}年五虎遁，{month[1]}月应为{expected_month}，请核对输入。")
+    expected_hour = stems[(stems.index(day[0]) % 5 * 2 + _EARTHLY_BRANCHES.index(hour[1])) % 10] + hour[1]
+    # sect=2 can keep the prior day at 23:00 while the hour follows the next day.
+    late_zi = hour[1] == "子" and hour[0] == stems[((stems.index(day[0]) + 1) % 5 * 2) % 10]
+    if hour != expected_hour and not late_zi:
+        raise ValueError(f"日柱与时柱不一致：按{day[0]}日五鼠遁，{hour[1]}时应为{expected_hour}，请核对输入。")
+    day_stem = day[0]
+    details = {}
+    hidden_all = []
+    for name, pillar in normalized.items():
+        stem, branch = pillar
+        hidden = LunarUtil.ZHI_HIDE_GAN[branch]
+        hidden_all.extend(hidden)
+        details[name] = {
+            "天干十神": "日主" if name == "日柱" else LunarUtil.SHI_SHEN[day_stem + stem],
+            "地支藏干": [{"天干": h, "十神": LunarUtil.SHI_SHEN[day_stem + h]} for h in hidden],
+            "纳音": LunarUtil.NAYIN[pillar],
+            "旬空": LunarUtil.getXunKong(pillar),
+            "五行": LunarUtil.WU_XING_GAN[stem] + LunarUtil.WU_XING_ZHI[branch],
+            "星运": _self_seat(day_stem, branch),
+            "自坐": _self_seat(stem, branch),
+        }
+    return {
+        "输入历法": "四柱八字", "四柱": normalized, "四柱详情": details,
+        "命局神煞": calculate_sanming_shensha(normalized, day_xunkong=LunarUtil.getXunKong(day)),
+        "检索条件": {"day_master": day_stem, "month_branch": month[1],
+                     "exposed_stems": sorted({p[0] for p in normalized.values()}),
+                     "hidden_stems": sorted(set(hidden_all))},
+        "日柱换日规则": "直接使用输入日柱，不进行日期换算或换日处理",
+        "时间说明": "按用户填写的四柱直接排盘，未提供公历出生日期，不进行真太阳时修正"
+                    + ("；子时日时搭配可对应晚子时次日时干取法，保留输入，不反推日期" if late_zi else ""),
     }
 
 

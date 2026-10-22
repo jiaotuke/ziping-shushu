@@ -8,6 +8,7 @@ import html
 import re
 import importlib
 from datetime import date, datetime, time
+from calendar import monthrange
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -17,7 +18,7 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent
 CACHE_ROOT = ROOT / ".cache"
 BOOK_NAMES = ["穷通宝鉴", "三命通会", "子平真诠", "滴天髓"]
-RETRIEVAL_VERSION = "paragraphs-ziping-chapters-1"
+RETRIEVAL_VERSION = "paragraphs-qiongtong-stem-month-2"
 
 # 模型缓存放在项目 D 盘目录，避免新下载默认进入 C 盘用户缓存。
 os.environ["HF_HOME"] = str(CACHE_ROOT / "huggingface")
@@ -79,8 +80,8 @@ st.markdown(
     </style>
     <div class="hero">
       <div class="hero-rule"></div>
-      <div class="hero-title">子平术数</div>
-      <div class="hero-subtitle">盈虚有数 · 以古籍观命理</div>
+      <div class="hero-title">盈虚有数，宇宙无穷</div>
+      <div class="hero-subtitle">-子平术数，以古籍观命理</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -214,7 +215,6 @@ def make_chart(
 
 
 def show_pillars(chart: dict) -> None:
-    st.subheader("四柱排盘")
     element_colors = {"木": "#72c982", "火": "#f07870", "土": "#a97945", "金": "#e7bd45", "水": "#438bc5"}
     stem_elements = dict(zip("甲乙丙丁戊己庚辛壬癸", "木木火火土土金金水水"))
     branch_elements = {"子": "水", "丑": "土", "寅": "木", "卯": "木", "辰": "土", "巳": "火",
@@ -336,6 +336,26 @@ def render_book_result(
     retrieval_result: dict,
     chart: dict | None = None,
 ) -> None:
+    """Give every book its own original/translation reading tabs."""
+    original_tab, translation_tab = st.tabs(["原文", "译文"])
+    with original_tab:
+        _render_book_original(book_name, book_results, retrieval_result, chart)
+    with translation_tab:
+        import book_translation as book_translation_module
+
+        importlib.reload(book_translation_module)
+        import translation_panel as translation_panel_module
+
+        translation_panel_module = importlib.reload(translation_panel_module)
+        translation_panel_module.render_translation_panel(book_name, book_results)
+
+
+def _render_book_original(
+    book_name: str,
+    book_results: list[dict],
+    retrieval_result: dict,
+    chart: dict | None = None,
+) -> None:
     """Render one book as soon as its individual retrieval has completed."""
     if not book_results:
         st.info(f"《{book_name}》本次没有检索到可展示的原文。")
@@ -349,7 +369,11 @@ def render_book_result(
             st.warning(
                 f"有 {len(retrieval_result['annotation_issues'])} 条标注未通过原文校验，已排除。"
             )
-        if retrieval_result.get("retrieval_mode") == "chapter_fallback":
+        if book_mode in {"day_month_exact", "day_month_shared"}:
+            st.caption("按日干和月令直接定位原文，不使用五行总论代替对应月份。条文的具体条件仍需结合命盘判断。")
+            if book_mode == "day_month_shared":
+                st.caption("底本部分内容采用合月或季节合论；此处保留目标月份的条文及涵盖该月的共论，原文篇名和出处照录。")
+        elif retrieval_result.get("retrieval_mode") == "chapter_fallback":
             st.warning(
                 f"未命中已人工核对的适用条件。以下是“{retrieval_result.get('selected_chapter') or '对应篇章'}”篇内的语义参考，"
                 "尚未确认适用于此命盘。"
@@ -369,7 +393,7 @@ def render_book_result(
         with st.container(border=True):
             retrieval_part = metadata.get("retrieval_part")
             part_label = f"{retrieval_part} · " if show_part and retrieval_part else ""
-            location_mode = "按日干定位" if book_name == "滴天髓" else "段落检索"
+            location_mode = "按日干定位" if book_name == "滴天髓" else "按日干月令定位" if book_name == "穷通宝鉴" else "段落检索"
             st.markdown(
                 f"**{part_label}原文 {rank}** · {metadata['chapter']} · "
                 f"原文位置：第 {metadata['line_number']} 行（{location_mode}）"
@@ -383,6 +407,7 @@ def render_book_result(
                 "chapter_conditioned": "限制在对应篇章内做语义排序",
                 "semantic_reference": "未找到对应篇章，回退到本书语义检索",
                 "按日干精确定位": "按日干精确定位对应专论",
+                "按日干月令精确定位": "按日干与月令定位完整原文段落",
             }
             if retrieval_method in method_labels:
                 st.caption(f"检索方式：{method_labels[retrieval_method]}")
@@ -397,6 +422,13 @@ def render_book_result(
                         escaped = f"<strong>{escaped}</strong>"
                     formatted.append(f"<p class='source-reading-line'>{escaped}</p>")
                 st.markdown("<div class='source-reading'>" + "".join(formatted) + "</div>", unsafe_allow_html=True)
+                with st.expander("查看原文文本"):
+                    st.text(source_document)
+            elif book_name == "穷通宝鉴":
+                st.markdown("<div class='source-reading'>" + "".join(
+                    f"<p class='source-reading-line'>{html.escape(paragraph)}</p>"
+                    for paragraph in source_document.split("\n\n") if paragraph.strip()
+                ) + "</div>", unsafe_allow_html=True)
                 with st.expander("查看原文文本"):
                     st.text(source_document)
             elif book_name == "三命通会" and len(source_ids) > 1:
@@ -423,6 +455,8 @@ def render_book_result(
             if book_name == "穷通宝鉴" and retrieval_result.get("retrieval_mode") == "verified_conditions":
                 annotation = result.get("annotation", {})
                 st.caption(f"出处：{metadata['citation']}｜条件标注：{annotation.get('status', '已匹配')}")
+            elif book_name == "穷通宝鉴" and book_mode in {"day_month_exact", "day_month_shared"}:
+                st.caption(f"出处：{metadata['citation']}｜按日干与月令定位；具体条文适用条件需结合命盘核对。")
             elif book_mode == "chapter_conditioned":
                 st.caption(f"出处：{metadata['citation']}｜依据本书篇章结构筛选，命理适用条件未核定")
             elif book_mode == "four_part":
@@ -473,33 +507,102 @@ def render_book_result(
 def render_birth_form() -> None:
     """Keep ordinary input changes inside this small, independently rerun area."""
     st.markdown("### 出生日期与时间")
-    calendar_type = st.radio("历法", ["公历", "农历"], horizontal=True, label_visibility="collapsed", key="calendar_type")
+    calendar_type = st.radio("历法", ["公历", "农历", "四柱八字"], horizontal=True, label_visibility="collapsed", key="calendar_type")
+    gender = st.radio("性别", ["男", "女"], index=None, horizontal=True, key="birth_gender")
+    if calendar_type == "四柱八字":
+        from lunar_python.util import LunarUtil
+
+        stems = "甲乙丙丁戊己庚辛壬癸"
+        branches = "子丑寅卯辰巳午未申酉戌亥"
+        pillar_cols = st.columns(4)
+        manual_pillars = {}
+        for column, name in zip(pillar_cols, ("年柱", "月柱", "日柱", "时柱")):
+            options = list(LunarUtil.JIA_ZI)
+            prerequisite = ""
+            if name == "月柱":
+                year_pillar = manual_pillars.get("年柱")
+                prerequisite = "年柱" if not year_pillar else ""
+                start = stems.index(year_pillar[0]) % 5 * 2 + 2 if year_pillar else 0
+                options = [stems[(start + i) % 10] + branch for i, branch in enumerate("寅卯辰巳午未申酉戌亥子丑")] if year_pillar else []
+            elif name == "时柱":
+                day_pillar = manual_pillars.get("日柱")
+                prerequisite = "日柱" if not day_pillar else ""
+                start = stems.index(day_pillar[0]) % 5 * 2 if day_pillar else 0
+                options = [stems[(start + i) % 10] + branch for i, branch in enumerate(branches)] if day_pillar else []
+                if day_pillar:
+                    options.append(stems[(start + 2) % 10] + "子")
+            select_key = f"manual_select_{name}"
+            if st.session_state.get(select_key) not in options:
+                st.session_state[select_key] = None
+            with column:
+                manual_pillars[name] = st.selectbox(
+                    name, options, index=None, key=select_key, disabled=bool(prerequisite),
+                    placeholder=f"请先选择{prerequisite}" if prerequisite else f"请选择{name}",
+                    format_func=lambda p, late_choice=options[-1] if name == "时柱" and options else None: p + "（晚子时）" if p == late_choice else p,
+                )
+        st.caption("选择年柱后可选月柱，选择日柱后可选时柱；无需出生日期和地点。时柱末项兼容晚子时取法。")
+        professional_birth = None
+        with st.expander("补充出生时刻（可选，用于专业细盘）"):
+            st.caption("四柱不能唯一确定出生日期。需要查看大运时，请补充与所选四柱对应的公历日期和排盘时刻。")
+            extra_date_col, extra_time_col = st.columns([2, 1])
+            with extra_date_col:
+                extra_date = st.date_input("对应公历出生日期", value=None, min_value=date(1800, 1, 1),
+                                            max_value=date(2200, 12, 31), key="manual_professional_birth_date")
+            with extra_time_col:
+                extra_time = st.time_input("对应排盘时刻", value=None, key="manual_professional_birth_time")
+            if extra_date is not None and extra_time is not None:
+                professional_birth = datetime.combine(extra_date, extra_time).isoformat(sep=" ")
+        st.button("开始排盘", type="primary", use_container_width=True,
+                  disabled=st.session_state.get("analysis_running", False) or not gender or not all(manual_pillars.values()),
+                  on_click=queue_analysis, key="start_analysis")
+        if st.session_state.get("analysis_running", False):
+            st.info("正在排盘，请稍候……")
+        st.session_state["birth_form"] = {"calendar_type": calendar_type, "pillars": manual_pillars,
+                                          "gender": gender, "professional_birth": professional_birth}
+        if st.session_state.get("analysis_requested") and not st.session_state.get("analysis_dispatching"):
+            st.session_state["analysis_dispatching"] = True
+            st.rerun()
+        return
     date_col, time_col = st.columns([2.2, 1], vertical_alignment="bottom")
     with date_col:
         if calendar_type == "公历":
-            birth_date = st.date_input(
-                "出生日期（年月日）",
-                value=date(1990, 1, 1),
-                min_value=date(1800, 1, 1),
-                max_value=date(2100, 12, 31),
-                format="YYYY/MM/DD",
-                key="birth_date",
-            )
+            initial_date = st.session_state.get("birth_date", date(1990, 1, 1))
+            if not isinstance(initial_date, date):
+                initial_date = date(1990, 1, 1)
+            solar_cols = st.columns([1.3, 1, 1])
+            with solar_cols[0]:
+                birth_year = st.selectbox("出生年份", list(range(1800, 2201)),
+                                          index=min(2200, max(1800, initial_date.year)) - 1800, key="solar_birth_year")
+            with solar_cols[1]:
+                birth_month = st.selectbox("月", list(range(1, 13)), index=initial_date.month - 1, key="solar_birth_month")
+            days = list(range(1, monthrange(birth_year, birth_month)[1] + 1))
+            if st.session_state.get("solar_birth_day", days[0]) not in days:
+                st.session_state["solar_birth_day"] = days[-1]
+            with solar_cols[2]:
+                birth_day = st.selectbox("日", days, index=min(initial_date.day, days[-1]) - 1, key="solar_birth_day")
+            birth_date = date(birth_year, birth_month, birth_day)
             lunar_year, lunar_month, lunar_day, is_leap_month = 1990, 1, 1, False
         else:
             birth_date = None
-            st.caption("农历日期")
-            lunar_cols = st.columns([1.2, 1, 1, .8])
+            lunar_cols = st.columns([1.3, 1, 1], vertical_alignment="bottom")
             with lunar_cols[0]:
-                lunar_year = st.number_input("年", min_value=1800, max_value=2200, value=1990, label_visibility="collapsed", key="lunar_year")
+                lunar_year = st.selectbox("出生年份", list(range(1800, 2201)), index=190, key="lunar_birth_year")
             with lunar_cols[1]:
-                lunar_month = st.number_input("月", min_value=1, max_value=12, value=1, label_visibility="collapsed", key="lunar_month")
+                month_names = ("正月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "冬月", "腊月")
+                lunar_month = st.selectbox("农历月", list(range(1, 13)),
+                                           index=int(st.session_state.get("lunar_month", 1)) - 1,
+                                           format_func=lambda m: month_names[m - 1], key="lunar_birth_month")
             with lunar_cols[2]:
-                lunar_day = st.number_input("日", min_value=1, max_value=30, value=1, label_visibility="collapsed", key="lunar_day")
-            with lunar_cols[3]:
-                is_leap_month = st.checkbox("闰月", key="is_leap_month")
+                day_names = ("初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十",
+                             "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
+                             "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十")
+                lunar_day = st.selectbox("农历日", list(range(1, 31)),
+                                         index=int(st.session_state.get("lunar_day", 1)) - 1,
+                                         format_func=lambda d: day_names[d - 1], key="lunar_birth_day")
     with time_col:
         birth_time = st.time_input("出生时刻", value=time(12, 0), key="birth_time")
+    if calendar_type == "农历":
+        is_leap_month = st.checkbox("闰月", key="is_leap_month", help="出生月份属于当年的闰月时勾选。")
 
     st.markdown("### 出生地点")
     location = None
@@ -578,7 +681,7 @@ def render_birth_form() -> None:
         "开始排盘",
         type="primary",
         use_container_width=True,
-        disabled=st.session_state.get("analysis_running", False),
+        disabled=st.session_state.get("analysis_running", False) or not gender,
         on_click=queue_analysis,
         key="start_analysis",
     )
@@ -586,6 +689,7 @@ def render_birth_form() -> None:
         st.info("正在排盘，请稍候……")
     st.session_state["birth_form"] = {
         "calendar_type": calendar_type,
+        "gender": gender,
         "birth_date": birth_date,
         "lunar_year": int(lunar_year),
         "lunar_month": int(lunar_month),
@@ -611,19 +715,31 @@ if submitted:
 
 if submitted:
     try:
-        chart, correction = make_chart(
-            form_data["calendar_type"],
-            form_data["birth_date"],
-            form_data["lunar_year"],
-            form_data["lunar_month"],
-            form_data["lunar_day"],
-            form_data["is_leap_month"],
-            form_data["birth_time"],
-            form_data["use_true_solar_time"],
-            form_data["location"],
-            form_data["fold_choice"],
-        )
-        chart["输入地点"] = location_label(form_data["location"]) if form_data["location"] else "未选择"
+        if form_data.get("gender") not in ("男", "女"):
+            raise ValueError("请先选择性别。")
+        if form_data["calendar_type"] == "四柱八字":
+            import bazi as bazi_module
+
+            importlib.reload(bazi_module)
+            chart = bazi_module.calculate_pillars_chart(form_data["pillars"])
+            if form_data.get("professional_birth"):
+                chart["专业出生时刻"] = form_data["professional_birth"]
+            correction = None
+        else:
+            chart, correction = make_chart(
+                form_data["calendar_type"],
+                form_data["birth_date"],
+                form_data["lunar_year"],
+                form_data["lunar_month"],
+                form_data["lunar_day"],
+                form_data["is_leap_month"],
+                form_data["birth_time"],
+                form_data["use_true_solar_time"],
+                form_data["location"],
+                form_data["fold_choice"],
+            )
+            chart["输入地点"] = location_label(form_data["location"]) if form_data["location"] else "未选择"
+        chart["性别"] = form_data["gender"]
         st.session_state["chart_result"] = {
             "chart": chart,
             "correction": correction,
@@ -646,12 +762,30 @@ if chart_result:
     chart = chart_result["chart"]
     refresh_legacy_chart_details(chart)
     st.divider()
-    show_pillars(chart)
-    st.caption(
-        f"出生信息：{chart.get('输入历法', '公历')} {chart.get('输入出生时间')}｜"
-        f"地点：{chart.get('输入地点', '未填写')}｜排盘采用时刻：{chart.get('公历')}｜"
-        f"{chart.get('时间说明')}"
-    )
+    st.subheader("四柱排盘")
+    basic_tab, professional_tab = st.tabs(["基础排盘", "专业细盘"])
+    with basic_tab:
+        show_pillars(chart)
+    with professional_tab:
+        import professional_chart as professional_chart_module
+
+        importlib.reload(professional_chart_module)
+        import pillar_relationships as pillar_relationships_module
+
+        importlib.reload(pillar_relationships_module)
+        import professional_panel as professional_panel_module
+
+        professional_panel_module = importlib.reload(professional_panel_module)
+        professional_panel_module.render_professional_chart(chart)
+    if chart.get("输入历法") == "四柱八字":
+        st.caption("四柱输入：" + "　".join(f"{name} {pillar}" for name, pillar in chart["四柱"].items())
+                   + "｜直接按输入四柱排盘")
+    else:
+        st.caption(
+            f"出生信息：{chart.get('输入历法', '公历')} {chart.get('输入出生时间')}｜"
+            f"地点：{chart.get('输入地点', '未填写')}｜排盘采用时刻：{chart.get('公历')}｜"
+            f"{chart.get('时间说明')}"
+        )
 
     correction = chart_result["correction"]
     if correction:
@@ -821,6 +955,6 @@ if chart_result:
 
 with st.expander("关于当前版本"):
     st.write("这是本机学习版网页。出生地点通过省、市、县区逐级选择；真太阳时修正使用所选区县中心的经度和对应时区。")
-    st.write("当前《穷通宝鉴》结构化条件索引只有一条例子，检索覆盖范围有限。")
-    st.write("排盘由 lunar-python 计算；AI 解读可选择智谱或 DeepSeek 平台及模型，按固定顺序提供带原文依据的解释。大运与起运年龄尚未计算。")
+    st.write("《穷通宝鉴》按日干与月令直接定位正文；原文中的具体条件仍需结合命盘核对。")
+    st.write("排盘由 lunar-python 计算；专业细盘支持运程浏览及原局与运年月日关系。AI 解读可选择智谱或 DeepSeek，默认分析原局，也可结合当前选定运年、流月、流日及古籍资料。")
     st.caption("行政区数据来源：DataV.GeoAtlas。区县中心坐标为近似位置，不代表具体出生医院。")
