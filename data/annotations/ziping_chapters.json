@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "source_file": "子平真诠.txt",
+  "description": "当前电子底本正文缺少第2至47篇标题。以下按本地目录顺序与正文起句记录篇章边界，不改写正文。目录中论伤官误编号为四十二，此处按顺序编号41。start_quote必须在原文中唯一命中且顺序一致，否则停止加载，避免误归篇。",
+  "chapters": [
+    {
+      "number": 1,
+      "title": "论十干十二支",
+      "start_quote": "一、论十干十二支",
+      "original_start_line": 127
+    },
+    {
+      "number": 2,
+      "title": "论阴阳生克",
+      "start_quote": "四时之运，相生而成，故木生火，火生土，土生金，金生水，水复生木，即相生之",
+      "original_start_line": 145
+    },
+    {
+      "number": 3,
+      "title": "论阴阳生死",
+      "start_quote": "五行干支之说，已详论于干支篇。干动而不息，支静而有常。以每干流行于十二支",
+      "original_start_line": 157
+    },
+    {
+      "number": 4,
+      "title": "论十干配合性情",
+      "start_quote": "合化之义，以十干阴阳相配而成。河图之数，以一二三四五配六七八九十，先天之",
+      "original_start_line": 173
+    },
+    {
+      "number": 5,
+      "title": "论十干合而不合",
+      "start_quote": "十干化合之义，前篇既明之矣，然而亦有合而不合者，何也？",
+      "original_start_line": 185
+    },
+    {
+      "number": 6,
+      "title": "论十干得时不旺失时不弱",
+      "start_quote": "书云，得时俱为旺论，失时便作衰看，虽是至理，亦死法也。然亦可活看。夫五行",
+      "original_start_line": 211
+    },
+    {
+      "number": 7,
+      "title": "论刑冲会合解法",
+      "start_quote": "刑者，三刑也，子卯巳申之类是也。冲者，六冲也，子午卯酉之类是也。会者，三",
+      "original_start_line": 221
+    },
+    {
+      "number": 8,
+      "title": "论用神",
+      "start_quote": "八字用神，专求月令，以日干配月令地支，而生克不同，格局分焉。财官印食，此",
+      "original_start_line": 245
+    },
+    {
+      "number": 9,
+      "title": "论用神成败救应",
+      "start_quote": "用神专寻月令，以四柱配之，必有成败。何谓成？如官逢财印，又无刑冲破害，官",
+      "original_start_line": 275
+    },
+    {
+      "number": 10,
+      "title": "论用神变化",
+      "start_quote": "用神既主月令矣，然月令所藏不一，而用神遂有变化。如十二支中，除子午卯酉外",
+      "original_start_line": 303
+    },
+    {
+      "number": 11,
+      "title": "论用神纯杂",
+      "start_quote": "用神既有变化，则变化之中，遂分纯、杂。纯者吉，杂者凶。",
+      "original_start_line": 325
+    },
+    {
+      "number": 12,
+      "title": "论用神格局高低",
+      "start_quote": "八字既有用神，必有格局，有格局必有高低，财官印食煞伤劫刃，何格无贵？何格",
+      "original_start_line": 341
+    },
+    {
+      "number": 13,
+      "title": "论用神因成得败因败得成",
+      "start_quote": "八字之中，变化不一，遂分成败；而成败之中，又变化不测，遂有因成得败，因败",
+      "original_start_line": 369
+    },
+    {
+      "number": 14,
+      "title": "论用神配气候得失",
+      "start_quote": "论命惟以月令用神为主，然亦须配气候而互参之。譬如英雄豪杰，生得其时，自然",
+      "original_start_line": 385
+    },
+    {
+      "number": 15,
+      "title": "论相神紧要",
+      "start_quote": "月令既得用神，则别位亦必有相，若君之有相，辅者是也。如官逢财生，则官为用",
+      "original_start_line": 421
+    },
+    {
+      "number": 16,
+      "title": "论杂气如何取用",
+      "start_quote": "四墓者，杂气也，何以谓之杂气？以其所藏者多，用神不一，故谓之杂气也。如辰",
+      "original_start_line": 441
+    },
+    {
+      "number": 17,
+      "title": "论墓库刑冲之说",
+      "start_quote": "辰戌丑未，最喜刑冲，财官入库不冲不发--此说虽俗书盛称之，然子平先生造命",
+      "original_start_line": 465
+    },
+    {
+      "number": 18,
+      "title": "论四吉神能破格",
+      "start_quote": "财官印食，四吉神也，然用之不当，亦能破格。",
+      "original_start_line": 485
+    },
+    {
+      "number": 19,
+      "title": "论四凶神能成格",
+      "start_quote": "煞伤枭刃，四凶神也，然施之得宜，亦能成格。如印绶根轻，透煞为助，煞能成格",
+      "original_start_line": 493
+    },
+    {
+      "number": 20,
+      "title": "论生克先后分吉凶",
+      "start_quote": "月令用神，配以四柱，固有每字之生克以分吉凶，然有同此生克，而先后之间，遂",
+      "original_start_line": 501
+    },
+    {
+      "number": 21,
+      "title": "论星辰无关格局",
+      "start_quote": "八字格局，专以月令配四柱，至于星辰好歹，既不能为生克之用，又何以操成败之",
+      "original_start_line": 533
+    },
+    {
+      "number": 22,
+      "title": "论外格用舍",
+      "start_quote": "八字用神既专主月令，何以又有外格乎？外格者，盖因月令无用，权而用之，故曰",
+      "original_start_line": 549
+    },
+    {
+      "number": 23,
+      "title": "论宫分用神配六亲",
+      "start_quote": "人有六亲，配之八字，亦存于命。",
+      "original_start_line": 561
+    },
+    {
+      "number": 24,
+      "title": "论妻子",
+      "start_quote": "大凡命中吉凶，于人愈近，其验益灵。富贵贫贱，本身之事，无论矣，至于六亲，",
+      "original_start_line": 577
+    },
+    {
+      "number": 25,
+      "title": "论行运",
+      "start_quote": "论运与看命无二法也。看命以四柱干支，配月令之喜忌，而取运则又以运之干，配",
+      "original_start_line": 601
+    },
+    {
+      "number": 26,
+      "title": "论行运成格变格",
+      "start_quote": "命之格局，成于八字，然配之以运，亦有成格变格之要权。其成格变格，较之喜忌",
+      "original_start_line": 653
+    },
+    {
+      "number": 27,
+      "title": "论喜忌干支有别",
+      "start_quote": "命中喜忌，虽支干俱有，而干主天，动而有为，支主地，静以待用，且干主一而支",
+      "original_start_line": 677
+    },
+    {
+      "number": 28,
+      "title": "论支中喜忌逢运透清",
+      "start_quote": "支中喜忌，固与干有别矣，而运逢透清，则静而待用者，正得其用，而喜忌之验，",
+      "original_start_line": 689
+    },
+    {
+      "number": 29,
+      "title": "论时说拘泥格局",
+      "start_quote": "八字用神专凭月令，月无用神，徐寻格局。月令，本也；外格，末也。今人不知轻",
+      "original_start_line": 697
+    },
+    {
+      "number": 30,
+      "title": "论时说以讹传讹",
+      "start_quote": "八字本有定理，理之不明，遂生异端，妄言妄听，牢不可破。如论干支，则不知阴",
+      "original_start_line": 729
+    },
+    {
+      "number": 31,
+      "title": "论正官",
+      "start_quote": "官以克身，虽与七煞有别，终受彼制，何以切忌刑冲破害，尊之若是乎？岂知人生",
+      "original_start_line": 745
+    },
+    {
+      "number": 32,
+      "title": "论正官取运",
+      "start_quote": "取运之道，一八字则有一八字之论，其理甚精，其法甚活，只可大略言之。变化在",
+      "original_start_line": 765
+    },
+    {
+      "number": 33,
+      "title": "论财",
+      "start_quote": "财为我克，使用之物也，以能生官，所以为美。为财帛，为妻妾，为才能，为驿马",
+      "original_start_line": 793
+    },
+    {
+      "number": 34,
+      "title": "论财取运",
+      "start_quote": "财格取运，即以财格所就之局，分而配之。其财旺生官者，运喜身旺印绶，不利七",
+      "original_start_line": 839
+    },
+    {
+      "number": 35,
+      "title": "论印绶",
+      "start_quote": "印绶喜其生身，正偏同为美格，故财与印不分偏正，同为一格而论之。印绶之格局",
+      "original_start_line": 867
+    },
+    {
+      "number": 36,
+      "title": "论绶印取运",
+      "start_quote": "印格取运，即以印格所成之局，分而配之。其印绶用官者，官露印重，财运反吉，",
+      "original_start_line": 907
+    },
+    {
+      "number": 37,
+      "title": "论食神",
+      "start_quote": "食神本属泄气，以其能生正财，所以喜之。故食神生财，美格也。财要有根，不必",
+      "original_start_line": 939
+    },
+    {
+      "number": 38,
+      "title": "论食神取运",
+      "start_quote": "食神取运，即以食神所成之局，分而配之。食神生财，财食轻，则行财食，财食重",
+      "original_start_line": 975
+    },
+    {
+      "number": 39,
+      "title": "论偏官",
+      "start_quote": "煞以攻身，似非美物，而大贵之格，多存七煞。盖控制得宜，煞为我用，如大英雄",
+      "original_start_line": 995
+    },
+    {
+      "number": 40,
+      "title": "论偏官取运",
+      "start_quote": "偏官取运，即以偏官所成之局分而配之。煞用食制，煞重食轻则助食，煞轻食重则",
+      "original_start_line": 1039
+    },
+    {
+      "number": 41,
+      "title": "论伤官",
+      "start_quote": "伤官虽非吉神，实为秀气，故文人学士，多于伤官格内得之。而夏木见水，冬金见",
+      "original_start_line": 1063
+    },
+    {
+      "number": 42,
+      "title": "论伤官取运",
+      "start_quote": "伤官取运，即以伤官所成之局，分而配之。伤官用财，财旺身轻，则利印比；身强",
+      "original_start_line": 1107
+    },
+    {
+      "number": 43,
+      "title": "论阳刃",
+      "start_quote": "阳刃者，劫我正财之神，乃正财之七煞也。禄前一位，惟五阳有之，故为阳刃。不",
+      "original_start_line": 1131
+    },
+    {
+      "number": 44,
+      "title": "论阳刃取运",
+      "start_quote": "阳刃用官，则运喜助官，然命中官星根深，则印绶比劫之方，反为美运，但不喜伤",
+      "original_start_line": 1155
+    },
+    {
+      "number": 45,
+      "title": "论建禄月劫",
+      "start_quote": "建禄者，月建逢禄堂也，禄即是劫。或以禄堂透出，即可依以用者，非也。故建禄",
+      "original_start_line": 1167
+    },
+    {
+      "number": 46,
+      "title": "论建禄月劫取运",
+      "start_quote": "禄劫取运，即以禄劫所成之局，分而配之。禄劫用官，印护者喜财，怕官星之逢合",
+      "original_start_line": 1219
+    },
+    {
+      "number": 47,
+      "title": "论杂格",
+      "start_quote": "杂格者，月令无用，以外格而用之，其格甚多，故谓之杂。大约要干头无官无煞，",
+      "original_start_line": 1247
+    },
+    {
+      "number": 48,
+      "title": "附论杂格取运",
+      "start_quote": "四十八、附论杂格取运",
+      "original_start_line": 1291
+    }
+  ]
+}

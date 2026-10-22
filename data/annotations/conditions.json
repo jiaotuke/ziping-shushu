@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "description": "《穷通宝鉴》的人工整理条件索引。verified 表示条件解释已由项目使用者人工核对确认。",
+  "annotations": [
+    {
+      "annotation_id": "qtbj-001",
+      "source_id": "c5dec1f20541ab301934ea0bdc3cd2911c997cadf862dba098dcf3c6b6817248",
+      "quote": "正月甲木，初春尚有余寒，得丙癸逢，富贵双全。癸藏丙透，名寒木向阳，主大富贵。",
+      "conditions": {
+        "day_master": "甲",
+        "month_branch": "寅",
+        "required_exposed_stems": ["丙"],
+        "required_hidden_stems": ["癸"]
+      },
+      "status": "verified",
+      "annotation_note": "经项目使用者人工核对确认。本条所在标题为‘三春甲木’，但原句明确限定‘正月甲木’，故将月令记为寅。‘癸藏丙透’明确对应癸为藏干、丙为透干；此标注只对应‘寒木向阳’这句话，不据此推断其他月份或其他条文。"
+    }
+  ]
+}

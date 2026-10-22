@@ -1,0 +1,19 @@
+{
+  "description": "人工标注的检索验收案例。expected_source_ids 必须由人工核对原文后维护。",
+  "cases": [
+    {
+      "case_id": "spring-jia-wood-cold-sun",
+      "topic": "春月甲木寒木向阳的调候原文",
+      "conditions": {
+        "day_master": "甲",
+        "month_branch": "寅",
+        "exposed_stems": ["甲", "丙", "癸"],
+        "hidden_stems": ["甲", "丙", "戊", "癸"]
+      },
+      "expected_source_ids": [
+        "c5dec1f20541ab301934ea0bdc3cd2911c997cadf862dba098dcf3c6b6817248"
+      ],
+      "top_k": 3
+    }
+  ]
+}
