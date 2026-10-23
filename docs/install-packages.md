@@ -1,5 +1,7 @@
 # 安装包使用说明
 
+当前构建版本 **0.5.0**，包含子平 K 线、三项概览、整运解释与十年评分。Windows/安卓均采用正式排盘、检索后解读的流程；没有新增无需排盘示例入口。文件大小、SHA256 与发布说明见 [v0.5.0](releases/v0.5.0.md)。
+
 ## Windows 电脑版
 
 分享文件：`dist/ZipingShushu-Windows.zip`。
@@ -66,4 +68,4 @@ AI 上下文裁剪、八步解读和引用检查复用现有实现。字面引�
 
 Windows 每次在 `.tmp/windows-release-<唯一编号>` 中生成全新目录，避免覆盖正在运行的旧版或删除其用户数据；`.tmp/windows-release-location.txt` 记录本次路径，ZIP 打包脚本自动读取。分享更新后的 ZIP，解压到新文件夹即可使用。
 
-安卓签名文件在 `.local/android-signing`，**请单独私密备份整个目录**，不要上传 GitHub 或随安装包分享。以后要让用户覆盖安装升级，必须保留相同签名并递增 `app/build.gradle` 的 `versionCode`；更新古籍资源时也应递增 Java 资源目录 `core-data-v1` 的版本。
+安卓签名文件在 `.local/android-signing`，**请单独私密备份整个目录**，不要上传 GitHub 或随安装包分享。以后要让用户覆盖安装升级，必须保留相同签名并递增 `app/build.gradle` 的 `versionCode`；更新古籍资源时也应递增 Java 资源目录 `core-data-v2` 的版本。

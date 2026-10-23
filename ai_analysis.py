@@ -37,7 +37,8 @@ PROVIDERS = {
         },
     },
 }
-PROMPT_VERSION = "ziping-full-luck-v6-natal-first"
+PREVIOUS_PROMPT_VERSION = "ziping-full-luck-v6-natal-first"
+PROMPT_VERSION = "ziping-v5-results-first-v1"
 STEP_TITLES = (
     "核定排盘事实", "日主与月令", "全局结构", "旺衰强弱",
     "格局成败与救应", "取用与喜忌", "岁运分析范围与基线", "结论与待核条件",
@@ -65,7 +66,9 @@ class ReportDraftError(CitationError):
     def __init__(self, report: dict, issues: list[dict]):
         super().__init__(report, issues)
         self.kind = "structure"
-        self.args = ("本段报告内容或格式不完整，草稿和已完成进度已保留，可修正本段后继续。",)
+        message = next((issue.get("message") for issue in issues if isinstance(issue.get("message"), str) and issue["message"].strip()), "")
+        summary = message[:700] + ("…" if len(message) > 700 else "") if message else "本段报告内容或格式不完整。"
+        self.args = (summary + " 草稿和已完成进度已保留，可修正本段后继续。",)
 
 
 def model_limits(provider: str, model: str, custom_window: int | None = None) -> dict:
@@ -299,9 +302,10 @@ def build_context(chart: dict, retrieval: dict, records: list[dict] | None = Non
     return context
 
 
-def context_signature(context: dict, *, provider: str = "zhipu", model: str = MODEL, thinking: bool = True) -> str:
+def context_signature(context: dict, *, provider: str = "zhipu", model: str = MODEL, thinking: bool = True,
+                      prompt_version: str = PROMPT_VERSION) -> str:
     thinking = thinking or requires_thinking(provider, model)
-    text = json.dumps([provider, model, thinking, PROMPT_VERSION, context], ensure_ascii=False, sort_keys=True)
+    text = json.dumps([provider, model, thinking, prompt_version, context], ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
@@ -337,7 +341,7 @@ JSON额外包含relation_implications数组：对facts.干支关系中范围为n
     return [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(wire, ensure_ascii=False, separators=(",", ":"))}]
 
 
-def build_messages(context: dict) -> list[dict]:
+def _build_messages_v4(context: dict) -> list[dict]:
     messages = _build_messages_v6(context)
     content = messages[0]["content"]
     content = content.replace("第2至6步每步至少一个引用；其余步骤可不引用。", "所有步骤的原文引用均可选，没有适用原文时citations填空列表或省略。")
@@ -350,13 +354,34 @@ def build_messages(context: dict) -> list[dict]:
     return messages
 
 
+def build_messages(context: dict) -> list[dict]:
+    from report_presentation import PRESENTATION_INSTRUCTIONS, presentation_schema
+    messages = _build_messages_v4(context)
+    messages[0]["content"] += "\n" + PRESENTATION_INSTRUCTIONS
+    wire = json.loads(messages[1]["content"])
+    wire["additional_output_fields"] = presentation_schema()
+    messages[1]["content"] = json.dumps(wire, ensure_ascii=False, separators=(",", ":"))
+    return messages
+
+
 def compatible_citation_signature(context: dict, *, provider: str, model: str, thinking: bool, custom_window: int | None = None) -> str:
     """Recognize an old checkpoint only when all original inputs still match exactly."""
     legacy = copy.deepcopy(context)
     budget = message_budget(_build_messages_v6(legacy), provider=provider, model=model, thinking=thinking, custom_window=custom_window)
     legacy["context_budget"]["input_estimate"] = budget["input_estimate"]
     legacy["context_budget"]["fits"] = budget["fits"]
-    return context_signature(legacy, provider=provider, model=model, thinking=thinking)
+    return context_signature(legacy, provider=provider, model=model, thinking=thinking, prompt_version=PREVIOUS_PROMPT_VERSION)
+
+
+def compatible_report_signatures(context: dict, *, provider: str, model: str, thinking: bool,
+                                 custom_window: int | None = None) -> set[str]:
+    """Reuse v4 content only for the exact same facts, sources and settings; no extra API call."""
+    legacy = copy.deepcopy(context)
+    budget = message_budget(_build_messages_v4(legacy), provider=provider, model=model, thinking=thinking, custom_window=custom_window)
+    legacy["context_budget"]["input_estimate"] = budget["input_estimate"]
+    legacy["context_budget"]["fits"] = budget["fits"]
+    return {context_signature(legacy, provider=provider, model=model, thinking=thinking, prompt_version=PREVIOUS_PROMPT_VERSION),
+            compatible_citation_signature(context, provider=provider, model=model, thinking=thinking, custom_window=custom_window)}
 
 
 def _request(api_key: str, payload: dict, *, timeout: int = 180, opener=None,
@@ -442,6 +467,8 @@ def check_connection(api_key: str, *, opener=None, provider: str = "zhipu", mode
 def validate_report(report: dict, context: dict) -> None:
     if not isinstance(report, dict) or report.get("pillars") != context["facts"]["四柱"]:
         raise AIError("报告中的四柱与程序排盘不一致，已停止展示，请重新生成。")
+    from report_presentation import validate_presentation
+    validate_presentation(report)
     steps = report.get("steps")
     if not isinstance(steps, list) or len(steps) != 8:
         raise AIError("报告没有完整遵循八步分析顺序，请重新生成。")

@@ -147,7 +147,7 @@ def _scope(chart: dict, plan_id: str, transit: dict | None) -> tuple[list[tuple[
     cycle, annual = transit.get("大运", {}), transit.get("流年", {})
     if not all(k in cycle for k in ("干支", "起始年", "结束年")) or not all(k in annual for k in ("年份", "干支")):
         return rows, "当前岁运资料不完整，请在本页重新选择大运、流年。"
-    rows += [("完整大运", "起运后的前六步正式大运 · 综合评分 · 人生K线 · 事业/财务/感情分项"),
+    rows += [("完整大运", "起运后的前六步正式大运 · 综合评分 · 子平K线 · 事业/财务/感情分项"),
              ("所选流年所在大运", f"{cycle['干支'] or '未起运'} · {cycle['起始年']}—{cycle['结束年']}"),
              ("选定流年", f"{annual['年份']}年 · {annual['干支']}")]
     if plan_id == "daily":

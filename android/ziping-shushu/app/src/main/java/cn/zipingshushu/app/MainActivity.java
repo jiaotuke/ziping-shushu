@@ -50,7 +50,7 @@ public class MainActivity extends Activity {
         setContentView(web);
         executor.execute(() -> {
             try {
-                File data = new File(getFilesDir(), "core-data-v1");
+                File data = new File(getFilesDir(), "core-data-v2");
                 copyAssets("core-data", data);
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(this));
                 runtime = Python.getInstance().getModule("mobile_runtime");

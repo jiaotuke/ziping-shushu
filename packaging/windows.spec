@@ -5,10 +5,11 @@ root = Path(SPECPATH).parent
 project_modules = ["bazi", "professional_chart", "professional_panel", "pillar_relationships", "sanming_shensha",
                    "ai_analysis", "ai_panel", "paid_analysis_panel", "report_downloads", "source_data", "runtime_paths",
                    "citation_audit", "book_translation", "translation_panel", "structured_retrieval", "portable_retrieval",
-                   "luck_analysis", "luck_chart"]
+                   "luck_analysis", "luck_chart", "report_presentation"]
 datas = [(str(root / "app.py"), "."), (str(root / "data/source"), "data/source"),
          (str(root / "data/annotations"), "data/annotations"),
          (str(root / "components/professional_chart"), "components/professional_chart"),
+         (str(root / "components/life_report"), "components/life_report"),
          (str(root / ".streamlit/config.toml"), ".streamlit")]
 # Application modules remain readable for Streamlit hot import/reload.
 datas += [(str(root / (name + ".py")), ".") for name in project_modules]

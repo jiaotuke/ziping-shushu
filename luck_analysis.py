@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import json
 import math
+import re
+import unicodedata
 
 from pillar_relationships import analyze_relationships, relationship_facts
 
@@ -140,10 +142,91 @@ def validate_relations(implications, expected, facts=None):
                 nodes[key]["名称"] + nodes[key]["干支"] for key in original["参与位置"])
 
 
+def _stage_error(focus, received, message=""):
+    from ai_analysis import AIError
+    actual = json.dumps(received, ensure_ascii=False)[:160]
+    error = AIError(f"本段应为 {focus['id']}，模型返回的标识为 {actual}。{message}"
+                    "未将不对应的内容并入报告，草稿与此前进度已保留。")
+    error.issue = "stage_mismatch"
+    return error
+
+
+def _same_stage(value, focus):
+    if value is None:
+        return True  # A missing transport label can be supplied by the bound request.
+    if type(value) not in (str, int):
+        return False
+    text = re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(value))).lower()
+    aliases = {focus["id"]}
+    if focus["level"] == "luck":
+        number = str(focus["cycle"]["id"])
+        aliases.update((number, f"luck_{number}", f"luck-{number}", f"luck/{number}",
+                        f"cycle:{number}", f"cycle_{number}", f"dayun:{number}",
+                        f"第{number}运", f"第{number}步大运", f"第{number}大运", f"大运{number}"))
+    else:
+        aliases.update({"annual": ("year", "流年"), "monthly": ("month", "流月"), "daily": ("day", "流日")}[focus["level"]])
+    return text in aliases
+
+
+def normalize_detail(document, focus):
+    """Unwrap one requested report and canonicalize equivalent labels, never another period."""
+    from ai_analysis import AIError
+    value, changes = copy.deepcopy(document), []
+    for _ in range(4):
+        if isinstance(value, list):
+            if len(value) != 1:
+                raise AIError(f"本段只请求 {focus['id']}，却收到 {len(value)} 项报告；不能任意挑选其中一项。")
+            value = value[0]
+            changes.append("展开单项报告列表。")
+            continue
+        if not isinstance(value, dict):
+            raise AIError(f"本段 {focus['id']} 应返回报告对象，实际收到 {type(value).__name__}。")
+        for key in ("id", "_stage"):
+            if key in value and not _same_stage(value[key], focus):
+                raise _stage_error(focus, value[key], f"字段：{key}。")
+        if any(key in value for key in ("assessment", "stem_effect", "branch_effect")):
+            break
+        wrappers = [(key, value[key]) for key in ("report", "document", "payload", "data", "result")
+                    if isinstance(value.get(key), (dict, list))]
+        if len(wrappers) != 1:
+            break
+        key, value = wrappers[0]
+        changes.append(f"展开报告外层 {key}。")
+    if not isinstance(value, dict):
+        raise AIError(f"本段 {focus['id']} 没有返回可识别的报告对象。")
+    received = value.get("id")
+    if not _same_stage(received, focus):
+        raise _stage_error(focus, received)
+    if received != focus["id"]:
+        changes.append(f"报告编号 {json.dumps(received, ensure_ascii=False)[:120]} 规范为 {focus['id']}；正文仍检查年份和关系覆盖。")
+        value["id"] = focus["id"]
+    if focus["level"] == "luck":
+        original = focus["cycle"]
+        metadata = value.get("cycle")
+        if isinstance(metadata, dict):
+            if "id" in metadata and not _same_stage(metadata["id"], focus):
+                raise _stage_error(focus, metadata["id"], "附带的大运信息指向其他大运。")
+            for key in ("pillar", "start_year", "end_year"):
+                if key in metadata and str(metadata[key]).strip() != str(original[key]):
+                    raise _stage_error(focus, received, f"大运信息 {key} 应为 {original[key]}，实际为 {str(metadata[key])[:80]}。")
+        if "pillar" in value and value["pillar"] != original["pillar"]:
+            raise _stage_error(focus, received, "附带的运柱与本次大运不一致。")
+    elif isinstance(value.get("selected"), dict):
+        for level, original in focus["selected"].items():
+            returned = value["selected"].get(level)
+            if isinstance(returned, dict):
+                for key in ("干支", "年份", "日期", "起始年", "结束年", "起始时刻", "结束时刻"):
+                    if key in returned and key in original and str(returned[key]).strip() != str(original[key]):
+                        raise _stage_error(focus, received, f"附带的{level}{key}与本次选择不一致。")
+    return value, changes
+
+
 def validate_detail(document, focus, sources, stage):
     from ai_analysis import AIError
     if not isinstance(document, dict) or document.get("id") != focus["id"]:
-        raise AIError("详细报告与所选大运/时间层级不对应，请继续生成。")
+        raise _stage_error(focus, document.get("id") if isinstance(document, dict) else type(document).__name__)
+    from report_presentation import validate_presentation
+    validate_presentation(document)
     for field, label in (("assessment", "整体评价"), ("stem_effect", "天干作用"), ("branch_effect", "地支根气"), ("structure_effect", "格局喜忌变化")):
         _text(document.get(field), label)
     for field, label in (("good", "有利之处"), ("bad", "不利之处")):
@@ -233,6 +316,7 @@ def _focus(context, cycle=None, level="luck"):
 
 
 def _detail_messages(context, base, focus, facts, repair=None):
+    from report_presentation import PRESENTATION_INSTRUCTIONS, presentation_schema
     schema = {"id": focus["id"], "assessment": "整体有利、不利或利弊并存及成立条件",
               "good": ["哪里好，何种机制"], "bad": ["哪里不好，何种机制"], "stem_effect": "运/岁干作用",
               "branch_effect": "运/岁支、藏干及根气作用", "structure_effect": "格局、救应、喜忌、调候的变化",
@@ -248,6 +332,7 @@ def _detail_messages(context, base, focus, facts, repair=None):
                             "citations": [{"source_id": "S001", "quote": "连续原文"}]} for y in focus["cycle"]["years"]]
     schema["relation_implications"] = [{**copy.deepcopy(schema["relation_implications"][0]), "relation_id": r["id"]}
                                        for r in focus["relations"]["关系"] if r["范围"] == focus["level"]]
+    schema.update(presentation_schema())
     for item in claims_in(schema):
         item["citations"] = []
     system = """你在续写传统命理文献的完整岁运报告。只输出所给结构的JSON，不重复八步原局，不输出思考过程。
@@ -256,6 +341,7 @@ def _detail_messages(context, base, focus, facts, repair=None):
 不能因原局结论已经生成就视为绝对正确；发现冲突须明确修正条件。月令固定，短期作用不得倒灌成原局事实；合冲刑害破须核对参与柱位，不见合即化。
 明确哪里好、哪里不好、总体偏向及反证；事业与学业、财务与资源、感情与合作必须分别解释，按年龄给适宜场景，不强套婚恋职业。
 顶层relation_implications只解释relations_to_explain清单，每条必须有且只有一项，relation_id逐字复制；清单为空时返回空列表。
+只生成required_stage_id对应的这一段报告。顶层id逐字复制required_stage_id（例如luck:4），不能用focus.cycle.id中的4代替，不要返回其他大运，也不要用report/data对象再包一层。
 focus.relations包含其他层级的背景关系，cycle.years中的annual_relations用于各年的reason，不要把这些背景或年度关系加入顶层relation_implications。不要按关系名称合并不同柱位的条目，也不要自创或缩写ID。
 逐条说明影响路径、现实可能表现、成立条件和其他可能。
 可以解释工作职责调整、资源压力、合作磨合等条件性场景，不把符号关系等同于必然结婚、发财、事故、疾病或死亡，不编造用户经历。
@@ -267,10 +353,11 @@ good和bad都必须填写；无明确依据时说明未见明确有利/不利及
 years完整按所给年份顺序返回，相对大运综合分的delta为-30到30；须结合该年而非仅大运干支，不能为画平滑曲线编分。仅评估解释性年度倾向，不预测具体事件。
 每年的annual_relations只列该流年新增关系，annual_node是该年流年柱；原局与大运共有关系已在focus.relations提供一次，不因逐年表中不重复列出就当作消失。
 未起运不参与大运评分，远期排表终点不是寿命结论。年度沿用历法库虚岁编排，交运年须说明精确交接条件。"""
+    system += "\n" + PRESENTATION_INSTRUCTIONS
     baseline = {"pillars": base["report"]["pillars"], "steps": base["report"]["steps"][:6],
                 "relation_implications": base["report"].get("relation_implications", [])}
     relations_to_explain = [copy.deepcopy(r) for r in focus["relations"]["关系"] if r["范围"] == focus["level"]]
-    wire = {"facts": facts, "focus": focus, "relations_to_explain": relations_to_explain,
+    wire = {"required_stage_id": focus["id"], "facts": facts, "focus": focus, "relations_to_explain": relations_to_explain,
             "required_relation_ids": [r["id"] for r in relations_to_explain],
             "natal_baseline": baseline, "schema": schema,
             "sources": context["sources"], "score_note": SCORE_NOTE}
@@ -286,6 +373,28 @@ years完整按所给年份顺序返回，相对大运综合分的delta为-30到3
 
 def _generate_detail(api_key, context, base, focus, facts, *, provider, model, thinking, custom_window, opener, repair=None):
     from ai_analysis import AIError, ReportDraftError, _request, _completion, message_budget
+    # A saved draft with only a harmless envelope/label difference needs no new API call.
+    if repair:
+        candidate = copy.deepcopy(repair["draft"])
+        local_sources = list(context["sources"])
+        if isinstance(repair.get("source_ids"), list):
+            local_sources = [s for s in local_sources if s["source_id"] in repair["source_ids"]]
+        try:
+            if isinstance(candidate, dict) and isinstance(candidate.get("raw_json"), str):
+                raw = candidate["raw_json"].strip()
+                if raw.startswith("```json\n") and raw.endswith("```"):
+                    raw = raw[8:-3].strip()
+                candidate = json.loads(raw)
+            normalized, format_changes = normalize_detail(candidate, focus)
+            changes = validate_detail(normalized, focus, local_sources, focus["id"])
+        except json.JSONDecodeError:
+            repair = {**repair, "issues": [{"step": focus["id"], "issue": "invalid_structure", "message": "保存的正文不是完整JSON。"}]}
+        except AIError as error:
+            repair = {**repair, "issues": [{"step": focus["id"], "issue": getattr(error, "issue", "invalid_structure"), "message": str(error)}]}
+        else:
+            return {"document": normalized, "usage": {}, "citation_changes": changes,
+                    "format_changes": ["已在本地恢复保存的草稿，本段没有再次调用模型。", *format_changes],
+                    "source_count": len(local_sources), "omitted_paragraphs": len(context["sources"]) - len(local_sources)}
     messages = _detail_messages(context, base, focus, facts, repair)
     # Reserve at least the existing normal response budget, without a prose word cap.
     # Reserve the long-response budget even when the user disables reasoning.
@@ -310,11 +419,13 @@ def _generate_detail(api_key, context, base, focus, facts, *, provider, model, t
         raise ReportDraftError({"_stage": focus["id"], "payload": {"raw_json": content}},
                                [{"step": focus["id"], "issue": "invalid_structure", "message": "模型未返回完整JSON。", "source_id": "", "quote": ""}]) from None
     try:
-        changes = validate_detail(document, focus, sources, focus["id"])
+        normalized, format_changes = normalize_detail(document, focus)
+        changes = validate_detail(normalized, focus, sources, focus["id"])
     except AIError as error:
-        raise ReportDraftError({"_stage": focus["id"], "payload": document},
-                               [{"step": focus["id"], "issue": "invalid_structure", "message": str(error), "source_id": "", "quote": ""}]) from None
-    return {"document": document, "usage": data.get("usage") if isinstance(data.get("usage"), dict) else {}, "citation_changes": changes,
+        raise ReportDraftError({"_stage": focus["id"], "payload": document, "source_ids": [s["source_id"] for s in sources]},
+                               [{"step": focus["id"], "issue": getattr(error, "issue", "invalid_structure"), "message": str(error), "source_id": "", "quote": ""}]) from None
+    return {"document": normalized, "usage": data.get("usage") if isinstance(data.get("usage"), dict) else {}, "citation_changes": changes,
+            "format_changes": format_changes,
             "source_count": len(sources), "omitted_paragraphs": len(context["sources"]) - len(sources)}
 
 
@@ -358,6 +469,8 @@ def generate_extended(api_key, context, *, provider, model, thinking, custom_win
     def generate_detail(facts, focus):
         def request(draft, issues):
             repair = {"draft": draft["payload"], "issues": issues or []} if draft and draft.get("_stage") == focus["id"] else None
+            if repair is not None and isinstance(draft.get("source_ids"), list):
+                repair["source_ids"] = draft["source_ids"]
             return _generate_detail(api_key, context, base, focus, facts, repair=repair, **settings)
 
         return _auto_repair_stage(request,
@@ -391,6 +504,7 @@ def generate_extended(api_key, context, *, provider, model, thinking, custom_win
         for key, value in part["usage"].items():
             if type(value) is int and value >= 0:
                 result["usage"][key] = result["usage"].get(key, 0) + value
+    result["format_changes"] = [change for part in parts for change in part.get("format_changes", [])]
     result["report"]["luck_analysis"] = {
         "version": SCORE_VERSION, "note": SCORE_NOTE,
         "scope_note": f"从第一步正式大运开始，仅分析前 {len(cycles)} 步；未起运阶段不作大运评分。所选流年及可选月日另外详解。范围终点不表示寿命。交运当年须核对精确交接时刻。",
@@ -404,7 +518,7 @@ def generate_extended(api_key, context, *, provider, model, thinking, custom_win
         "逐字引用校验不能证明条文适用性或现实预测准确性；书籍所附评注不等同于原作者正文。",
         "所选流年及可选月日仅作本层条件性解释，未将短期作用倒灌成原局或整步大运结论。"]
     result["report"]["steps"][6] = {
-        "step": 7, "conclusion": f"以原局格局、救应与取用为基线，已完成起运后前 {len(cycles)} 步正式大运的逐运分析、评分和人生K线，"
+        "step": 7, "conclusion": f"以原局格局、救应与取用为基线，已完成起运后前 {len(cycles)} 步正式大运的逐运分析、评分和子平K线，"
                                  "以及当前所选流年及可选月日的独立详解。各步大运的有利、不利、事业、财务、感情与引用见下方完整章节。",
         "chart_evidence": [f"出生后 {plan['start_age']} 起运；{plan['start']} 交运。"],
         "citations": copy.deepcopy(base["report"]["steps"][5]["citations"]),

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import os
+import json
 from datetime import datetime
 
 import streamlit as st
 
 from ai_analysis import (
-    AIError, PROVIDERS, STEP_TITLES, build_context, check_connection, context_signature, generate_report,
-    requires_thinking, prepare_context, CitationError, compatible_citation_signature,
+    AIError, PROVIDERS, build_context, check_connection, context_signature, generate_report,
+    requires_thinking, prepare_context, CitationError, compatible_report_signatures,
 )
 
 
@@ -55,7 +56,7 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
             st.button("生成 AI 解读", disabled=True, key="self_preview_generate")
         st.info("当前为独立界面预览。返回排盘页面后，可使用已有的自备模型解读功能。")
         return
-    st.caption("选择平台和模型 · 固定八步分析 · 原文引用可选")
+    st.caption("第五版 · 白话概览在前 · 点击子平 K 线看分项 · 推导依据可展开")
     custom_window = None
     with st.container(border=True):
         col_platform, col_model = st.columns([1, 2])
@@ -144,7 +145,7 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
             st.caption(f"流月：{month['名称']} {month['干支']}（{month['起始时刻']} 至 {month['结束时刻']}，不含结束时刻）；"
                        f"流日：{day['日期']} {day['干支']}。")
         else:
-            st.caption("另包含起运后的前六步正式大运及人生K线；本次所选流年单独详解。")
+            st.caption("另包含起运后的前六步正式大运及子平K线；本次所选流年单独详解。")
     try:
         context = build_context(chart, retrieval, transit=transit)
         context = prepare_context(context, provider=provider, model=model, thinking=thinking, custom_window=custom_window)
@@ -155,9 +156,9 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
     job = st.session_state.setdefault("ai_extended_job", {})
     existing = [job, st.session_state.get("glm_analysis"), st.session_state.get("ai_failed_citations")]
     if any(isinstance(entry, dict) and entry.get("signature") and entry["signature"] != signature for entry in existing):
-        legacy_signature = compatible_citation_signature(context, provider=provider, model=model, thinking=thinking, custom_window=custom_window)
+        legacy_signatures = compatible_report_signatures(context, provider=provider, model=model, thinking=thinking, custom_window=custom_window)
         for entry in existing:
-            if isinstance(entry, dict) and entry.get("signature") == legacy_signature:
+            if isinstance(entry, dict) and entry.get("signature") in legacy_signatures:
                 entry["signature"] = signature
     if job.get("signature") != signature:
         job.clear()
@@ -199,7 +200,7 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
 
     st.write("分析依据：《子平真诠》全文与所附评注，以及本次检索到的其他古籍原文。")
     st.caption("原文引用可选：有适用原文再附引用；没有时直接给出模型推演。无法对应原文的摘录会省略，缺少引用不会阻断报告。")
-    scope_caption = "从起运开始分段分析前六步正式大运，再详解所选流年；包含逐运评分、人生K线及关系现实表现。" if transit else "本次仅分析原局及关系可能表现，不发送岁运资料。"
+    scope_caption = "从起运开始分段分析前六步正式大运，再详解所选流年；包含逐运评分、子平K线及关系现实表现。" if transit else "本次仅分析原局及关系可能表现，不发送岁运资料。"
     if transit and "流月" in transit:
         scope_caption = "从起运开始分段分析前六步正式大运，再分别详解所选流年、流月、流日。"
     st.caption(f"当前选择：{platform['name']} / {model or '请填写模型 ID'}。点击生成后，会把当前四柱、十神、干支关系和古籍资料发送至{platform['name']}。{scope_caption}")
@@ -244,6 +245,7 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
                    "上次未完成的草稿已保留，可按当前可选引用规则修正后继续。")
         labels = {"missing_citation": "缺少原文引用", "unknown_source_id": "引用编号不存在",
                   "quote_not_in_source": "摘录不是该段原文的连续文字", "invalid_structure": "内容或格式需补充",
+                  "stage_mismatch": "报告标识或时间范围不匹配",
                   "output_truncated": "模型输出达到 Token 上限"}
         with st.expander("查看失败位置与原因", expanded=True):
             for issue in failed["issues"]:
@@ -254,7 +256,9 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
                     st.write(issue["message"])
                 if issue["quote"]:
                     st.text(issue["quote"])
-        st.caption("点击上方‘修正本段并继续’，会把保存的草稿和问题发送至当前模型；本次如仍有内容或格式问题，最多再自动修正一次。已完成阶段不重复请求。")
+        st.download_button("下载本段草稿与错误记录", data=json.dumps({"report": failed["report"], "issues": failed["issues"]}, ensure_ascii=False, indent=2).encode("utf-8"),
+                           file_name="子平术数-待修正草稿.json", mime="application/json", key="ai_failed_draft_download")
+        st.caption("点击上方‘修正本段并继续’，会先在本地检查保存的岁运草稿；仅编号或外层格式差异且内容完整时直接恢复，不调用模型。仍有实质缺项才请求修正，最多再自动修正一次。已完成阶段不重复请求。")
     st.caption("长报告请求的读取等待上限为 600 秒。生成期间请保持当前页面，避免切换模型、范围或专业细盘时间。")
     if generate_clicked:
         # A failed new request must not leave an older report looking like the new result.
@@ -293,43 +297,19 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
     if not analysis:
         return
     result = analysis["result"]
+    from luck_chart import render_extended
+    render_extended(result["report"], context["sources"], key="life_report_" + signature[:16])
+    with st.expander("报告信息与引用核定记录", expanded=False):
+        st.caption(f"本报告模型：{PROVIDERS.get(result.get('provider'), platform)['name']} / {result.get('model', model)}")
+        for change in result.get("citation_changes", []):
+            st.write(change)
+        for change in result.get("format_changes", []):
+            st.write(change)
+        usage = result.get("usage", {})
+        if isinstance(usage, dict) and isinstance(usage.get("total_tokens"), int):
+            st.caption(f"已通过校验阶段的接口返回用量：{usage['total_tokens']} Tokens")
+            if isinstance(usage.get("prompt_tokens"), int) and isinstance(usage.get("completion_tokens"), int):
+                st.caption(f"实际输入 {usage['prompt_tokens']:,} Tokens；实际输出用量（含平台计入的思考）{usage['completion_tokens']:,} Tokens。")
+            st.caption("统计不含未通过校验或未取得完整响应的请求；实际总用量以模型平台账单为准。")
     from report_downloads import render_report_downloads
     render_report_downloads(result, context["sources"], key="self_" + signature[:16])
-    st.caption(f"本报告模型：{PROVIDERS.get(result.get('provider'), platform)['name']} / {result.get('model', model)}")
-    report = result["report"]
-    sources = {source["source_id"]: source for source in context["sources"]}
-    st.caption("所展示的原文摘录已核对；未附引用的部分为模型推演。摘录对应原文不代表解释适用性已经确认。")
-    if result.get("citation_changes"):
-        with st.expander("引用格式核定记录"):
-            for change in result["citation_changes"]:
-                st.write(change)
-    st.markdown(report["summary"])
-    for title, step in zip(STEP_TITLES, report["steps"]):
-        st.markdown(f"### {step['step']}. {title}")
-        st.write(step["conclusion"])
-        if step["chart_evidence"]:
-            st.markdown("**命盘依据**")
-            for evidence in step["chart_evidence"]:
-                st.write("• " + evidence)
-        if step["citations"]:
-            with st.expander("查看原文依据"):
-                for citation in step["citations"]:
-                    source = sources[citation["source_id"]]
-                    st.caption(f"《{source['book_name']}》· {source['chapter']} · 原文第 {source['line_number']} 行")
-                    st.text(citation["quote"])
-        else:
-            st.caption("模型推演")
-        for uncertainty in step["uncertainties"]:
-            st.caption("待核：" + uncertainty)
-    from luck_chart import render_extended
-    render_extended(report, context["sources"])
-    if report["limitations"]:
-        st.markdown("**本次局限**")
-        for limitation in report["limitations"]:
-            st.write("• " + limitation)
-    usage = result.get("usage", {})
-    if isinstance(usage, dict) and isinstance(usage.get("total_tokens"), int):
-        st.caption(f"已通过校验阶段的接口返回用量：{usage['total_tokens']} Tokens")
-        if isinstance(usage.get("prompt_tokens"), int) and isinstance(usage.get("completion_tokens"), int):
-            st.caption(f"实际输入 {usage['prompt_tokens']:,} Tokens；实际输出用量（含平台计入的思考）{usage['completion_tokens']:,} Tokens。")
-        st.caption("上述统计不含被校验拒绝或未取得完整响应的请求用量；自动修正前的失败请求也可能计费，总用量以模型平台账单为准。")

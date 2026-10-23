@@ -976,6 +976,8 @@ if chart_result:
         import citation_audit as citation_audit_module
 
         importlib.reload(citation_audit_module)
+        import report_presentation as report_presentation_module
+        importlib.reload(report_presentation_module)
         import ai_analysis as ai_analysis_module
         importlib.reload(ai_analysis_module)
 

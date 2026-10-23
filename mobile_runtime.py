@@ -131,7 +131,7 @@ def _scope(body):
 
 
 def _generate(body, progress=None):
-    from ai_analysis import build_context, generate_report, prepare_context
+    from ai_analysis import build_context, generate_report, prepare_context, context_signature
     if not body.get("api_key", "").strip():
         raise ValueError("请填写你自己的模型 API Key。")
     if not _state.get("retrieval", {}).get("success"):
@@ -145,18 +145,22 @@ def _generate(body, progress=None):
                               provider=provider, model=model, thinking=bool(body.get("thinking", True)))
     _state.pop("citation_failure", None)
     _state["pending_context"] = context
+    job = _state.get("extended_job", {})
+    failed = job.get("pending_draft") if job.get("signature") == context_signature(context, provider=provider, model=model, thinking=bool(body.get("thinking", True))) else None
     result = generate_report(body["api_key"], context, provider=provider, model=model, thinking=bool(body.get("thinking", True)),
+                             repair_report=failed["report"] if failed else None, repair_issues=failed["issues"] if failed else None,
                              checkpoint=_state.setdefault("extended_job", {}), progress=progress)
     return _report_result(result, context)
 
 
 def _report_result(result, context):
     from luck_analysis import claims_in
-    from luck_chart import extended_html
+    from luck_chart import dashboard_document, reasoning_html
     _state.pop("citation_failure", None)
     _state["result"], _state["report_sources"] = result, context["sources"]
     used = {c["source_id"] for claim in claims_in(result["report"]) for c in claim["citations"]}
-    return {"result": result, "extended_html": extended_html(result["report"], context["sources"]),
+    return {"result": result, "dashboard_html": dashboard_document(result["report"]),
+            "reasoning_html": reasoning_html(result["report"], context["sources"]),
             "sources": [{k: s[k] for k in ("source_id", "book_name", "chapter", "line_number")}
                                            for s in context["sources"] if s["source_id"] in used]}
 
@@ -217,6 +221,9 @@ def dispatch(method: str, payload: str, progress=None) -> str:
         repair_available = hasattr(error, "report") and hasattr(error, "issues")
         if repair_available:
             _state["citation_failure"] = {"report": error.report, "issues": error.issues}
+        elif method in ("generate", "repair") and _state.get("extended_job", {}).get("pending_draft"):
+            _state["citation_failure"] = _state["extended_job"]["pending_draft"]
+            repair_available = True
         return json.dumps({"ok": False, "error": message, "repair_available": repair_available}, ensure_ascii=False)
     except Exception:
         return json.dumps({"ok": False, "error": "当前操作未完成，请重新打开应用或核对输入资料。"}, ensure_ascii=False)

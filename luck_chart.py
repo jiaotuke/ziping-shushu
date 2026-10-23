@@ -6,6 +6,8 @@ import html
 
 from luck_analysis import FACTORS, SCORE_NOTE
 
+DASHBOARD_UI_VERSION = "v5_years_2"
+
 
 def esc(value):
     return html.escape(str(value), quote=True)
@@ -15,11 +17,11 @@ def score_label(value):
     return "证据不足，暂不评分" if value is None else f"{value:g} / 100"
 
 
-def chart_svg(life):
+def chart_svg(life, *, interactive=False):
     cycles = life["cycles"]
     width, height = max(920, len(cycles) * 86 + 80), 350
     y = lambda score: 35 + (100 - score) * 2.4
-    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="人生K线，项目解释性评分" viewBox="0 0 {width} {height}" style="width:100%;min-width:850px;font-family:serif;background:#101114;color:#ddd">',
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="子平K线，项目解释性评分" viewBox="0 0 {width} {height}" style="width:100%;min-width:850px;font-family:serif;background:#101114;color:#ddd">',
              '<desc>每步大运一根K线，开收为首末流年评分，高低为该运全部流年评分极值，金点为大运综合分。缺分不补点。</desc>']
     for tick in (0, 25, 50, 75, 100):
         parts.append(f'<path d="M45 {y(tick)}H{width-15}" stroke="#34343b"/><text x="7" y="{y(tick)+5}" fill="#aaa" font-size="13">{tick}</text>')
@@ -31,7 +33,11 @@ def chart_svg(life):
             title += f"\n开 {candle['open']} / 收 {candle['close']} / 高 {candle['high']} / 低 {candle['low']}"
         else:
             title += "\n年度评分有缺项，不生成完整蜡烛"
-        parts.append(f'<g><title>{esc(title)}</title>')
+        attributes = f' data-cycle-index="{i}" role="button" tabindex="0" aria-label="{esc(title)}" aria-pressed="false"' if interactive else ''
+        parts.append(f'<g{attributes}><title>{esc(title)}</title>')
+        if interactive:
+            hit_width = (width - 115) / max(len(cycles), 1)
+            parts.append(f'<rect class="candle-hit" x="{x-hit_width/2:.1f}" y="20" width="{hit_width:.1f}" height="326" rx="10" fill="transparent"/>')
         if candle:
             color = "#66b69a" if candle["close"] >= candle["open"] else "#df8875"
             top = y(max(candle["open"], candle["close"]))
@@ -46,6 +52,68 @@ def chart_svg(life):
                      f'<text x="{x:.1f}" y="320" fill="#aaa" text-anchor="middle" font-size="11">{cycle["start_year"]}–{cycle["end_year"]}</text>'
                      f'<text x="{x:.1f}" y="338" fill="#aaa" text-anchor="middle" font-size="11">{esc(cycle["note"])}</text></g>')
     return "".join(parts) + "</svg>"
+
+
+def dashboard_payload(report):
+    from report_presentation import presentation_view
+    life = report.get("luck_analysis")
+    cycles = []
+    for item in life.get("cycles", []) if life else []:
+        cycle = item["cycle"]
+        cycles.append({"id": cycle["id"], "title": cycle["label"] + " · " + cycle["pillar"],
+                       "range": f"{cycle['start_year']}—{cycle['end_year']} · {cycle['note']}",
+                       "score": score_label(item["score"]), "rating": item["rating"],
+                       "start_year": cycle["start_year"], "end_year": cycle["end_year"],
+                       "ohlc": item.get("ohlc"), "detail": cycle_detail_view(item), **presentation_view(item)})
+    labels = {"annual": "流年重点", "monthly": "流月重点", "daily": "流日重点"}
+    periods = []
+    initial = 0
+    for item in life.get("selected", []) if life else []:
+        periods.append({"title": labels.get(item["id"], "所选时间"), "range": json_selected(item["selected"]),
+                        **presentation_view(item)})
+        if item["id"] == "annual":
+            year = item["selected"].get("流年", {}).get("年份")
+            initial = next((i for i, c in enumerate(cycles) if type(year) is int and c["start_year"] <= year <= c["end_year"]), 0)
+    return {"chart": chart_svg(life, interactive=True) if life and cycles else "", "cycles": cycles,
+            "initial_index": initial, "natal": presentation_view(report), "periods": periods,
+            "score_note": SCORE_NOTE,
+            "scope_note": life["scope_note"] if life else "仅原局解读，未生成岁运评分或K线。"}
+
+
+def cycle_detail_view(item):
+    """Expose already-generated explanations and annual scores without another model request."""
+    return {"assessment": item.get("assessment", ""), "good": item.get("good", []), "bad": item.get("bad", []),
+            "effects": [{"label": label, "text": item.get(key, "")} for key, label in
+                        (("stem_effect", "天干作用"), ("branch_effect", "地支与根气"), ("structure_effect", "格局与喜忌变化"))],
+            "domains": item.get("domains", []), "uncertainties": item.get("uncertainties", []),
+            "factors": [{"label": label, "weight": weight, "score": score_label(factor.get("score")), "reason": factor.get("reason", "")}
+                        for factor, (_, label, weight) in zip(item.get("factors", []), FACTORS)],
+            "years": [{"year": year["year"], "pillar": year.get("pillar", ""), "score": year.get("score"),
+                       "score_label": score_label(year.get("score")), "delta": year.get("delta"), "reason": year.get("reason", "")}
+                      for year in item.get("years", [])]}
+
+
+def cycle_detail_html(item):
+    """Same selected-cycle section in full text/print overviews."""
+    out = ['<section><h3>这步大运怎么理解</h3>', _paragraph(item.get('assessment', ''))]
+    for key, label in (("good", "有利之处"), ("bad", "值得留意")):
+        out += ['<h4>' + label + '</h4>', _list(item.get(key, []))]
+    out += ['<h3>运内逐年评分与解读</h3>']
+    for year in item.get('years', []):
+        out += ['<details><summary>' + esc(f"{year['year']} {year.get('pillar', '')} · {score_label(year.get('score'))}") + '</summary>',
+                _paragraph(year.get('reason', '')),
+                _paragraph('相对大运基线的调整：' + (f"{year['delta']:+g}" if year.get('delta') is not None else '待核')), '</details>']
+    return ''.join(out) + '</section>'
+
+
+def dashboard_document(report):
+    """Self-contained interactive HTML; JSON cannot escape its inert script element."""
+    import json
+    from runtime_paths import RESOURCE_ROOT
+    template = (RESOURCE_ROOT / "components/life_report/index.html").read_text(encoding="utf-8")
+    data = json.dumps(dashboard_payload(report), ensure_ascii=False).replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
+    return template.replace('<script id="ziping-initial-data" type="application/json"></script>',
+                            '<script id="ziping-initial-data" type="application/json">' + data + '</script>')
 
 
 def _paragraph(value):
@@ -106,27 +174,69 @@ def detail_html(item, sources):
     return ''.join(output)
 
 
-def extended_html(report, sources):
-    out = ['<section><h2>关系与现实表现</h2>', relations_html(report.get("relation_implications", []), sources), '</section>']
-    if report.get('natal_limitations'):
-        out += ['<details><summary>原局分析阶段的局限（岁运已在后续章节补充）</summary>', _list(report['natal_limitations']), '</details>']
-    life = report.get("luck_analysis")
+def summary_html(document, title):
+    from report_presentation import presentation_view
+    view = presentation_view(document)
+    out = ['<section class="result-summary"><h3>' + esc(title) + '</h3>', _paragraph(view["overview"]["headline"])]
+    if "score" in document:
+        out.append(_paragraph('命理解读参考分：' + score_label(document['score']) + ' · ' + document['rating']))
+    for key, label in (("opportunity", "可以把握"), ("caution", "值得留意")):
+        if view["overview"][key]:
+            out.append(_paragraph(label + '：' + view["overview"][key]))
+    out.append('<div class="summary-cards">')
+    for card in view["cards"]:
+        out += ['<article><h4>' + esc(card['label']) + '</h4>', _paragraph(card['summary'])]
+        if card['advice']:
+            out.append(_paragraph('建议：' + card['advice']))
+        if card['legacy']:
+            out.append(_paragraph(card['note']))
+        out.append('</article>')
+    return ''.join(out) + '</div></section>'
+
+
+def results_html(report):
+    """Static full overview, also used for complete text/print exports."""
+    life = report.get('luck_analysis')
     if not life:
-        return ''.join(out)
-    out += [f'<section><h2>人生 K 线 · {len(life["cycles"])} 步大运</h2>', _paragraph(life['note']), _paragraph(life['scope_note']),
-            _paragraph(f"出生后 {life['start_age']} 起运；交运时刻 {life['start']}。"),
-            '<div style="overflow-x:auto">' + chart_svg(life) + '</div>',
-            _paragraph('每步大运一根K线：开/收为该运首/末流年评分，高/低为全部运内流年评分极值，金点为大运综合分。颜色只反映首末分差，不表示整运好坏；远期排表不表示寿命。')]
+        return summary_html(report, '原局概览')
+    out = ['<section><h2>子平 K 线</h2>', _paragraph(SCORE_NOTE), _paragraph(life['scope_note']),
+           '<div style="overflow-x:auto">' + chart_svg(life) + '</div>']
     for item in life['cycles']:
-        cycle = item['cycle']
-        title = f"{cycle['label']} {cycle['pillar']} · {cycle['start_year']}—{cycle['end_year']} · {cycle['note']} · {score_label(item['score'])} · {item['rating']}"
-        out += ['<details><summary>' + esc(title) + '</summary>', detail_html(item, sources), '</details>']
-    labels = {"annual": "选定流年详解", "monthly": "选定流月详解", "daily": "选定流日详解"}
+        c = item['cycle']
+        out.append(summary_html(item, f"{c['label']} {c['pillar']} · {c['start_year']}—{c['end_year']} · {c['note']}"))
+        out.append(cycle_detail_html(item))
     for item in life['selected']:
-        out += ['<h3>' + labels.get(item['id'], '所选岁运') + '</h3>', _paragraph(json_selected(item['selected'])), detail_html(item, sources)]
-    if any(life.get('source_omissions', [])):
-        out += [_paragraph('部分生成阶段受上下文预算影响省略了其他古籍段落，《子平真诠》完整保留。各段引用仅使用该次实际发送的来源。')]
+        out += [summary_html(item, {"annual": "流年重点", "monthly": "流月重点", "daily": "流日重点"}.get(item['id'], '所选时间')),
+                _paragraph(json_selected(item['selected']))]
     return ''.join(out) + '</section>'
+
+
+def reasoning_html(report, sources):
+    from ai_analysis import STEP_TITLES
+    out = ['<section><h2>原局判断与推导依据</h2>', _paragraph(report['summary'])]
+    for step in report['steps']:
+        out += ['<details><summary>' + esc(f"{step['step']}. {STEP_TITLES[step['step']-1]}") + '</summary>',
+                _paragraph(step['conclusion']), _list(step.get('chart_evidence', [])), citations_html(step, sources),
+                _list(step.get('uncertainties', [])), '</details>']
+    out += ['<h3>原局关系与现实表现</h3>', relations_html(report.get('relation_implications', []), sources)]
+    life = report.get('luck_analysis')
+    if life:
+        out += ['<h2>逐运推导与评分依据</h2>']
+        for item in life['cycles']:
+            c = item['cycle']
+            title = f"{c['label']} {c['pillar']} · {c['start_year']}—{c['end_year']}"
+            out += ['<details><summary>' + esc(title) + '</summary>', detail_html(item, sources), '</details>']
+        for item in life['selected']:
+            title = {"annual": "所选流年推导", "monthly": "所选流月推导", "daily": "所选流日推导"}.get(item['id'], '所选时间推导')
+            out += ['<details><summary>' + title + '</summary>', _paragraph(json_selected(item['selected'])), detail_html(item, sources), '</details>']
+        if any(life.get('source_omissions', [])):
+            out.append(_paragraph('部分阶段因窗口预算省略其他古籍段落，《子平真诠》全文保留；引用仅按实际提供的段落核对。'))
+    out += ['<h3>待核条件与局限</h3>', _list(report.get('natal_limitations', [])), _list(report.get('limitations', []))]
+    return ''.join(out) + '</section>'
+
+
+def extended_html(report, sources):
+    return results_html(report) + '<details><summary>查看完整推导与古籍依据</summary>' + reasoning_html(report, sources) + '</details>'
 
 
 def json_selected(selected):
@@ -151,31 +261,13 @@ def extended_text(report, sources):
     return ''.join(parser.parts)
 
 
-def render_extended(report, sources):
+def render_extended(report, sources, *, key='life_report'):
+    from pathlib import Path
     import streamlit as st
-    life = report.get('luck_analysis')
-    if report.get('relation_implications'):
-        st.markdown('### 原局关系与现实表现')
-        st.html(relations_html(report['relation_implications'], sources))
-    if report.get('natal_limitations'):
-        with st.expander('原局分析阶段的局限（岁运见后续章节）'):
-            for limitation in report['natal_limitations']:
-                st.write(limitation)
-    if not life:
-        return
-    st.markdown(f'### 人生 K 线 · {len(life["cycles"])} 步大运')
-    st.caption(SCORE_NOTE)
-    st.write(f"出生后 {life['start_age']} 起运 · {life['start']} 交运。")
-    st.caption(life['scope_note'])
-    st.html('<div style="overflow-x:auto">' + chart_svg(life) + '</div>')
-    st.caption('开/收＝首末流年分，高/低＝运内流年分极值，金点＝大运综合分。颜色仅表示首末变化；缺分不补点。')
-    for item in life['cycles']:
-        cycle = item['cycle']
-        with st.expander(f"{cycle['label']} {cycle['pillar']} · {cycle['start_year']}—{cycle['end_year']} · {cycle['note']} · {score_label(item['score'])} · {item['rating']}"):
-            st.html(detail_html(item, sources))
-    for item in life['selected']:
-        st.markdown('### ' + {"annual": "选定流年详解", "monthly": "选定流月详解", "daily": "选定流日详解"}[item['id']])
-        st.caption(json_selected(item['selected']))
-        st.html(detail_html(item, sources))
-    if any(life.get('source_omissions', [])):
-        st.caption('部分阶段因窗口预算省略其他古籍段落，《子平真诠》全文保留，引用只按实际提供的段落校验。')
+    import streamlit.components.v1 as components
+    # Reload the changed frontend without discarding the report or model checkpoints.
+    dashboard = components.declare_component('ziping_life_report_' + DASHBOARD_UI_VERSION, path=str(Path(__file__).parent / 'components/life_report'))
+    dashboard(payload=dashboard_payload(report), key=key + '_' + DASHBOARD_UI_VERSION, default=None)
+    with st.expander('查看完整推导与古籍依据', expanded=False):
+        st.html(reasoning_html(report, sources))
+        st.caption('原文摘录已核对；没有引用的内容为模型推演。摘录对应原文不代表解释适用性已获确认。')

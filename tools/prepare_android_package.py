@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STAGE = ROOT / ".tmp/android-stage"
 PYTHON_FILES = ("mobile_runtime.py", "runtime_paths.py", "bazi.py", "professional_chart.py", "pillar_relationships.py",
                 "sanming_shensha.py", "source_data.py", "structured_retrieval.py", "portable_retrieval.py",
-                "ai_analysis.py", "citation_audit.py", "book_translation.py", "report_downloads.py", "luck_analysis.py", "luck_chart.py")
+                "ai_analysis.py", "citation_audit.py", "book_translation.py", "report_downloads.py", "luck_analysis.py", "luck_chart.py", "report_presentation.py")
 BOOKS = ("穷通宝鉴.txt", "三命通会.txt", "子平真诠.txt", "滴天髓.txt", "SOURCE.md")
 
 
@@ -20,6 +20,12 @@ def main():
     assets.mkdir(exist_ok=True)
     for name in PYTHON_FILES:
         shutil.copyfile(ROOT / name, python_root / name)
+    dashboard = python_root / "components/life_report"
+    dashboard.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / "components/life_report/index.html", dashboard / "index.html")
+    dashboard_asset = assets / "core-data/components/life_report"
+    dashboard_asset.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / "components/life_report/index.html", dashboard_asset / "index.html")
     for package_name in ("lunar_python", "tzdata", "certifi"):
         spec = importlib.util.find_spec(package_name)
         origin = Path(next(iter(spec.submodule_search_locations)))

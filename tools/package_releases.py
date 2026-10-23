@@ -37,7 +37,7 @@ def main():
         for path in sorted(WINDOWS.rglob("*")):
             if path.is_file() and releasable(path):
                 output.write(path, "ZipingShushu-Windows/" + path.relative_to(WINDOWS).as_posix())
-    manifest = {"version": "0.2.0", "files": []}
+    manifest = {"version": "0.5.0", "files": []}
     for artifact in (archive, apk):
         digest = hashlib.sha256()
         with artifact.open("rb") as stream:
