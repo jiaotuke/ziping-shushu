@@ -5,6 +5,50 @@ from __future__ import annotations
 from typing import Any
 import copy
 
+UNCITED_NOTE = "模型推演，未附可核对的原文引用。"
+
+
+def optional_citations(report: dict, source_records: list[dict]) -> tuple[dict, list[str]]:
+    """Keep only verifiable supplied quotes; missing quotes never block analysis."""
+    result = copy.deepcopy(report)
+    changes = []
+
+    def walk(value, path="报告"):
+        if isinstance(value, list):
+            for index, item in enumerate(value, start=1):
+                walk(item, f"{path}·{index}")
+            return
+        if not isinstance(value, dict):
+            return
+        is_claim = ("citations" in value or "conclusion" in value or "relation_id" in value
+                    or ("score" in value and "reason" in value) or ("delta" in value and "reason" in value)
+                    or ("assessment" in value and "structure_effect" in value))
+        if is_claim:
+            raw = value.get("citations")
+            if isinstance(raw, dict):
+                raw = [raw]
+            refs = raw if isinstance(raw, list) else []
+            supplied = raw not in (None, [])
+            refs = [{"source_id": c["source_id"], "quote": c["quote"]} for c in refs
+                    if isinstance(c, dict) and isinstance(c.get("source_id"), str) and isinstance(c.get("quote"), str)
+                    and c["source_id"].strip() and c["quote"].strip()]
+            checked, corrected = reconcile_citations({"steps": [{"citations": refs}]}, source_records)
+            changes.extend(f"{path}：已按原文核定引用编号或空白格式。" for _ in corrected)
+            accepted = [c for c in checked["steps"][0]["citations"]
+                        if not audit_report_citations([{"citations": [c]}], source_records)]
+            removed = (len(raw) if isinstance(raw, list) else int(supplied)) - len(accepted)
+            value["citations"] = accepted
+            value["citation_status"] = "verified" if accepted else "not_cited"
+            value["citation_note"] = "所附摘录已核对原文；解释适用性仍需判断。" if accepted else UNCITED_NOTE
+            if removed > 0:
+                changes.append(f"{path}：{removed} 条引用未能对应原文，已省略；分析保留为模型推演。")
+        for key, item in list(value.items()):
+            if key not in ("citations", "citation_status", "citation_note"):
+                walk(item, f"{path}·{key}")
+
+    walk(result)
+    return result, list(dict.fromkeys(changes))
+
 
 def reconcile_citations(report: dict, source_records: list[dict]) -> tuple[dict, list[str]]:
     """Resolve only unique literal matches; never fuzzy-match or invent a quote."""

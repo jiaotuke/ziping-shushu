@@ -64,4 +64,6 @@ AI 上下文裁剪、八步解读和引用检查复用现有实现。字面引�
 
 安卓打包使用 `.venv` 中的 `lunar_python`、`tzdata`、`certifi` 纯 Python 包，按白名单暂存，避免手机首次启动安装依赖。首次构建需要联网获取 Gradle 依赖；脚本已将相关缓存指向 D 盘。
 
+Windows 每次在 `.tmp/windows-release-<唯一编号>` 中生成全新目录，避免覆盖正在运行的旧版或删除其用户数据；`.tmp/windows-release-location.txt` 记录本次路径，ZIP 打包脚本自动读取。分享更新后的 ZIP，解压到新文件夹即可使用。
+
 安卓签名文件在 `.local/android-signing`，**请单独私密备份整个目录**，不要上传 GitHub 或随安装包分享。以后要让用户覆盖安装升级，必须保留相同签名并递增 `app/build.gradle` 的 `versionCode`；更新古籍资源时也应递增 Java 资源目录 `core-data-v1` 的版本。

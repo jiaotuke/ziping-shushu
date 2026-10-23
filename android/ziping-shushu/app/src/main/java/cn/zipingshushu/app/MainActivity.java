@@ -95,10 +95,9 @@ public class MainActivity extends Activity {
             if (!id.matches("[0-9]{1,12}") || payload.length() > 50000) return;
             executor.execute(() -> {
                 String output;
-                try { output = runtime.callAttr("dispatch", method, payload).toString(); }
+                try { output = runtime.callAttr("dispatch", method, payload, new Progress()).toString(); }
                 catch (Exception ignored) { output = "{\"ok\":false,\"error\":\"本地操作未完成，请重新打开应用。\"}"; }
-                String script = "window.receiveNative(" + JSONObject.quote(id) + "," + JSONObject.quote(output) + ")";
-                runOnUiThread(() -> web.evaluateJavascript(script, null));
+                deliver(id, output);
             });
         }
 
@@ -124,6 +123,27 @@ public class MainActivity extends Activity {
                 try { startActivityForResult(intent, 201); }
                 catch (Exception ignored) { pendingExport = null; }
             });
+        }
+    }
+
+    public class Progress {
+        public void update(String label) {
+            if (isFinishing() || isDestroyed()) throw new IllegalStateException("Application closed");
+            runOnUiThread(() -> {
+                if (!isFinishing() && !isDestroyed()) web.evaluateJavascript("window.nativeProgress(" + JSONObject.quote(label) + ")", null);
+            });
+        }
+    }
+
+    private void deliver(String id, String output) {
+        for (int offset = 0; offset < output.length();) {
+            int end = Math.min(offset + 16000, output.length());
+            if (end < output.length() && Character.isHighSurrogate(output.charAt(end-1))) end--;
+            String chunk = output.substring(offset, end);
+            boolean last = end == output.length();
+            String script = "window.receiveNativeChunk(" + JSONObject.quote(id) + "," + JSONObject.quote(chunk) + "," + last + ")";
+            runOnUiThread(() -> { if (!isFinishing() && !isDestroyed()) web.evaluateJavascript(script, null); });
+            offset = end;
         }
     }
 

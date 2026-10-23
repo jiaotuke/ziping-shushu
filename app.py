@@ -979,6 +979,14 @@ if chart_result:
         import ai_analysis as ai_analysis_module
         importlib.reload(ai_analysis_module)
 
+        # Refresh shared report logic without restarting the server or discarding session progress.
+        import luck_analysis as luck_analysis_module
+        importlib.reload(luck_analysis_module)
+        import luck_chart as luck_chart_module
+        importlib.reload(luck_chart_module)
+        import report_downloads as report_downloads_module
+        importlib.reload(report_downloads_module)
+
         import ai_panel as ai_panel_module
         ai_panel_module = importlib.reload(ai_panel_module)
         ai_panel_module.render_ai_panel(chart, retrieval_result)

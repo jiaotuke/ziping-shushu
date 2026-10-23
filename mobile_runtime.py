@@ -23,7 +23,7 @@ def initialize(resource_root: str, user_data: str) -> str:
 def _catalog():
     from ai_analysis import PROVIDERS, STEP_TITLES
     return {"providers": {key: {"name": item["name"], "models": item["models"]} for key, item in PROVIDERS.items()},
-            "wechat": "bxzgf-bxbgf", "version": "0.1.0", "steps": STEP_TITLES,
+            "wechat": "bxzgf-bxbgf", "version": "0.2.0", "steps": STEP_TITLES,
             "retrieval": "本地段落关键词排序（非向量模型）"}
 
 
@@ -130,12 +130,14 @@ def _scope(body):
     return transit
 
 
-def _generate(body):
+def _generate(body, progress=None):
     from ai_analysis import build_context, generate_report, prepare_context
     if not body.get("api_key", "").strip():
         raise ValueError("请填写你自己的模型 API Key。")
     if not _state.get("retrieval", {}).get("success"):
         raise ValueError("请先检索古籍。")
+    if _state.get("result"):
+        _state.pop("extended_job", None)
     _state.pop("result", None)
     _state.pop("report_sources", None)
     provider, model = body.get("provider", "zhipu"), body.get("model", "glm-4.7-flash")
@@ -143,19 +145,23 @@ def _generate(body):
                               provider=provider, model=model, thinking=bool(body.get("thinking", True)))
     _state.pop("citation_failure", None)
     _state["pending_context"] = context
-    result = generate_report(body["api_key"], context, provider=provider, model=model, thinking=bool(body.get("thinking", True)))
+    result = generate_report(body["api_key"], context, provider=provider, model=model, thinking=bool(body.get("thinking", True)),
+                             checkpoint=_state.setdefault("extended_job", {}), progress=progress)
     return _report_result(result, context)
 
 
 def _report_result(result, context):
+    from luck_analysis import claims_in
+    from luck_chart import extended_html
     _state.pop("citation_failure", None)
     _state["result"], _state["report_sources"] = result, context["sources"]
-    used = {c["source_id"] for step in result["report"]["steps"] for c in step["citations"]}
-    return {"result": result, "sources": [{k: s[k] for k in ("source_id", "book_name", "chapter", "line_number")}
+    used = {c["source_id"] for claim in claims_in(result["report"]) for c in claim["citations"]}
+    return {"result": result, "extended_html": extended_html(result["report"], context["sources"]),
+            "sources": [{k: s[k] for k in ("source_id", "book_name", "chapter", "line_number")}
                                            for s in context["sources"] if s["source_id"] in used]}
 
 
-def _repair(body):
+def _repair(body, progress=None):
     from ai_analysis import generate_report, prepare_context
     failed = _state.get("citation_failure")
     if not failed or not body.get("api_key", "").strip():
@@ -164,7 +170,7 @@ def _repair(body):
                               thinking=bool(body.get("thinking", True)))
     result = generate_report(body["api_key"], context, provider=body["provider"], model=body["model"],
                              thinking=bool(body.get("thinking", True)), repair_report=failed["report"],
-                             repair_issues=failed["issues"])
+                             repair_issues=failed["issues"], checkpoint=_state.setdefault("extended_job", {}), progress=progress)
     return _report_result(result, context)
 
 
@@ -193,13 +199,18 @@ def _export(body):
             "mime": {"html": "text/html", "txt": "text/plain", "json": "application/json"}[extension]}
 
 
-def dispatch(method: str, payload: str) -> str:
+def dispatch(method: str, payload: str, progress=None) -> str:
     handlers = {"catalog": lambda _: _catalog(), "calculate": _calculate, "periods": _periods,
                 "retrieve": _retrieve, "generate": _generate, "repair": _repair, "translate": _translate, "export": _export}
     try:
         if method not in handlers or len(payload) > 50000:
             raise ValueError("不支持的操作。")
-        value = handlers[method](json.loads(payload))
+        body = json.loads(payload)
+        if method in ("generate", "repair"):
+            listener = (lambda done, total, label: progress.update(f"{done}/{total} · {label}")) if progress is not None else None
+            value = handlers[method](body, progress=listener)
+        else:
+            value = handlers[method](body)
         return json.dumps({"ok": True, "value": value}, ensure_ascii=False)
     except (ValueError, KeyError, TypeError, OSError) as error:
         message = str(error)[:450] if isinstance(error, ValueError) else "资料不完整或本地文件暂不可用，请重新排盘。"

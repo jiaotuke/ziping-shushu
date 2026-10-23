@@ -10,7 +10,10 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
-WINDOWS = DIST / "ZipingShushu-Windows"
+LOCATION = ROOT / ".tmp/windows-release-location.txt"
+WINDOWS = Path(LOCATION.read_text(encoding="utf-8-sig").strip()) if LOCATION.is_file() else DIST / "ZipingShushu-Windows"
+if not WINDOWS.resolve().is_relative_to(ROOT):
+    raise SystemExit("Windows release must remain inside the project directory.")
 FORBIDDEN = {"user-data", ".local", ".cache", ".git", "__pycache__"}
 
 
@@ -33,8 +36,8 @@ def main():
     with ZipFile(archive, "w", ZIP_DEFLATED, compresslevel=6) as output:
         for path in sorted(WINDOWS.rglob("*")):
             if path.is_file() and releasable(path):
-                output.write(path, path.relative_to(DIST).as_posix())
-    manifest = {"version": "0.1.0", "files": []}
+                output.write(path, "ZipingShushu-Windows/" + path.relative_to(WINDOWS).as_posix())
+    manifest = {"version": "0.2.0", "files": []}
     for artifact in (archive, apk):
         digest = hashlib.sha256()
         with artifact.open("rb") as stream:

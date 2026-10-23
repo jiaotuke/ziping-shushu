@@ -4,7 +4,8 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy
 root = Path(SPECPATH).parent
 project_modules = ["bazi", "professional_chart", "professional_panel", "pillar_relationships", "sanming_shensha",
                    "ai_analysis", "ai_panel", "paid_analysis_panel", "report_downloads", "source_data", "runtime_paths",
-                   "citation_audit", "book_translation", "translation_panel", "structured_retrieval", "portable_retrieval"]
+                   "citation_audit", "book_translation", "translation_panel", "structured_retrieval", "portable_retrieval",
+                   "luck_analysis", "luck_chart"]
 datas = [(str(root / "app.py"), "."), (str(root / "data/source"), "data/source"),
          (str(root / "data/annotations"), "data/annotations"),
          (str(root / "components/professional_chart"), "components/professional_chart"),

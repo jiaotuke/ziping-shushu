@@ -12,8 +12,8 @@ import streamlit as st
 WECHAT_ID = "bxzgf-bxbgf"
 PLANS = (
     {"id": "natal", "title": "原局解读", "price": "6.90", "description": "原局八步分析，结合古籍梳理旺衰、格局与取用。"},
-    {"id": "annual", "title": "大运流年", "price": "12.90", "description": "包含原局，结合选定的一步大运、一个流年。"},
-    {"id": "daily", "title": "运年月日详解", "price": "19.90", "description": "包含原局与运年，细看选定的一个流月、一个流日。"},
+    {"id": "annual", "title": "大运流年", "price": "12.90", "description": "原局、前六步大运详解与评分K线，再详解选定流年。"},
+    {"id": "daily", "title": "运年月日详解", "price": "19.90", "description": "原局、前六步大运与评分K线，再详解选定流年、流月、流日。"},
 )
 
 
@@ -139,7 +139,7 @@ def _render_period_selector(chart: dict, plan_id: str, seed: dict | None) -> tup
 
 
 def _scope(chart: dict, plan_id: str, transit: dict | None) -> tuple[list[tuple[str, str]], str | None]:
-    rows = [("解读内容", "原局八步分析 · 古籍引用与待核条件")]
+    rows = [("解读内容", "原局八步分析 · 关系现实表现 · 古籍引用与待核条件")]
     if plan_id == "natal":
         return rows, None
     if not isinstance(transit, dict) or transit.get("四柱") != chart.get("四柱"):
@@ -147,7 +147,8 @@ def _scope(chart: dict, plan_id: str, transit: dict | None) -> tuple[list[tuple[
     cycle, annual = transit.get("大运", {}), transit.get("流年", {})
     if not all(k in cycle for k in ("干支", "起始年", "结束年")) or not all(k in annual for k in ("年份", "干支")):
         return rows, "当前岁运资料不完整，请在本页重新选择大运、流年。"
-    rows += [("选定大运", f"{cycle['干支'] or '未起运'} · {cycle['起始年']}—{cycle['结束年']}"),
+    rows += [("完整大运", "起运后的前六步正式大运 · 综合评分 · 人生K线 · 事业/财务/感情分项"),
+             ("所选流年所在大运", f"{cycle['干支'] or '未起运'} · {cycle['起始年']}—{cycle['结束年']}"),
              ("选定流年", f"{annual['年份']}年 · {annual['干支']}")]
     if plan_id == "daily":
         month, day = transit.get("流月", {}), transit.get("流日", {})

@@ -24,11 +24,15 @@ def report_exports(result: dict, sources: list[dict], *, title: str = "子平术
             source = by_id.get(citation["source_id"], {})
             lines += [f"原文依据：《{source.get('book_name', '来源待核')}》 · {source.get('chapter', '')}"
                       f" · 第 {source.get('line_number', '')} 行", citation["quote"]]
+        if not step.get("citations"):
+            lines += ["模型推演"]
         lines += ["待核：" + value for value in step.get("uncertainties", [])]
     lines += ["", "本次局限", *report.get("limitations", []), "",
               "本报告为传统文献的 AI 辅助解读。摘录字面校验不代表解释适用性已获证实。"]
+    base_text = "\n".join(lines)
+    from luck_chart import extended_html, extended_text
+    lines += ["", extended_text(report, sources)]
     text = "\n".join(lines)
-    escaped = html.escape(text)
     page = ('<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">'
@@ -36,8 +40,12 @@ def report_exports(result: dict, sources: list[dict], *, title: str = "子平术
             'body{max-width:820px;margin:40px auto;padding:0 24px;color:#25221c;background:#faf7ef;'
             'font-family:serif}pre{font-family:inherit;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.9}'
             '@media print{body{background:white;margin:0;max-width:none}pre{font-size:11pt}}'
-            f'</style><body><h1>{html.escape(title)}</h1><pre>{escaped}</pre></body></html>')
-    artifact = {"format": "ziping-report-v1", "exported_at": datetime.now().isoformat(timespec="seconds"),
+            'details{margin:16px 0;padding:12px;border:1px solid #bbb;border-radius:8px}summary{cursor:pointer}'
+            'p,li,blockquote{line-height:1.9}blockquote{border-left:2px solid #a87b40;padding-left:12px}'
+            '@media print{details{break-inside:auto}details>summary{display:block}details>*{display:block!important}}'
+            f'</style><body><h1>{html.escape(title)}</h1><pre>{html.escape(base_text)}</pre>'
+            + extended_html(report, sources).replace('<details>', '<details open>') + '</body></html>')
+    artifact = {"format": "ziping-report-v2-full-luck", "exported_at": datetime.now().isoformat(timespec="seconds"),
                 "result": result, "sources": [{k: s.get(k, "") for k in
                 ("source_id", "book_name", "chapter", "line_number")} for s in sources]}
     return {"html": page.encode("utf-8"), "txt": text.encode("utf-8-sig"),

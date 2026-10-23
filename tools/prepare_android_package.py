@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STAGE = ROOT / ".tmp/android-stage"
 PYTHON_FILES = ("mobile_runtime.py", "runtime_paths.py", "bazi.py", "professional_chart.py", "pillar_relationships.py",
                 "sanming_shensha.py", "source_data.py", "structured_retrieval.py", "portable_retrieval.py",
-                "ai_analysis.py", "citation_audit.py", "book_translation.py", "report_downloads.py")
+                "ai_analysis.py", "citation_audit.py", "book_translation.py", "report_downloads.py", "luck_analysis.py", "luck_chart.py")
 BOOKS = ("穷通宝鉴.txt", "三命通会.txt", "子平真诠.txt", "滴天髓.txt", "SOURCE.md")
 
 
