@@ -24,8 +24,25 @@ def configured_api_key(provider: str = "zhipu") -> str:
         return ""
 
 
-def render_ai_panel(chart: dict, retrieval: dict) -> None:
+def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False, preview_transit: dict | None = None) -> None:
     st.subheader("AI 解读")
+    method = st.radio("解读方式", ["付费解读", "自备模型"], horizontal=True,
+                      key="ai_service_mode_preview" if preview_only else "ai_service_mode")
+    if method == "付费解读":
+        import importlib
+        import paid_analysis_panel
+
+        paid_analysis_panel = importlib.reload(paid_analysis_panel)
+        paid_analysis_panel.render_paid_panel(chart, retrieval, transit=preview_transit, preview_only=preview_only)
+        return
+    if preview_only:
+        st.caption("使用自己的模型账户，Token 费用由模型平台结算。")
+        with st.container(border=True):
+            st.selectbox("模型平台", ["智谱", "DeepSeek"], key="self_preview_provider")
+            st.text_input("API Key", type="password", disabled=True, placeholder="在实际解读页面填写自己的密钥", key="self_preview_key")
+            st.button("生成 AI 解读", disabled=True, key="self_preview_generate")
+        st.info("当前为独立界面预览。返回排盘页面后，可使用已有的自备模型解读功能。")
+        return
     st.caption("选择平台和模型 · 固定八步分析 · 原文引用校验")
     custom_window = None
     with st.container(border=True):
@@ -189,6 +206,8 @@ def render_ai_panel(chart: dict, retrieval: dict) -> None:
     if not analysis:
         return
     result = analysis["result"]
+    from report_downloads import render_report_downloads
+    render_report_downloads(result, context["sources"], key="self_" + signature[:16])
     st.caption(f"本报告模型：{PROVIDERS.get(result.get('provider'), platform)['name']} / {result.get('model', model)}")
     report = result["report"]
     sources = {source["source_id"]: source for source in context["sources"]}

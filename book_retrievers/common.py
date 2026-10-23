@@ -59,4 +59,4 @@ def retrieve_sections(book_name: str, topic: str, sections: list[str], collectio
             results["documents"][0], results["metadatas"][0], results["distances"][0]
         )
     ]
-    return ranked, "semantic_reference", None
+    return ranked, getattr(collection, "reference_mode", "semantic_reference"), None

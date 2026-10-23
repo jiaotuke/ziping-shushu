@@ -15,8 +15,9 @@ from urllib.request import Request, urlopen
 
 import streamlit as st
 
-ROOT = Path(__file__).resolve().parent
-CACHE_ROOT = ROOT / ".cache"
+from runtime_paths import RESOURCE_ROOT as ROOT, CACHE_ROOT
+
+PORTABLE_MODE = os.environ.get("ZIPING_PORTABLE") == "1"
 BOOK_NAMES = ["穷通宝鉴", "三命通会", "子平真诠", "滴天髓"]
 RETRIEVAL_VERSION = "paragraphs-qiongtong-stem-month-2"
 
@@ -88,9 +89,27 @@ st.markdown(
 )
 
 
+if st.query_params.get("preview") == "paid":
+    st.caption("付费咨询入口预览 · 使用演示出生资料，不覆盖实际命盘")
+    if st.button("返回排盘页面", key="leave_paid_preview"):
+        st.query_params.clear()
+        st.rerun()
+    import paid_analysis_panel as paid_preview_module
+    import ai_panel as ai_preview_module
+
+    paid_preview_module = importlib.reload(paid_preview_module)
+    ai_preview_module = importlib.reload(ai_preview_module)
+    preview_chart, preview_transit = paid_preview_module.preview_data()
+    ai_preview_module.render_ai_panel(preview_chart, {"success": True}, preview_only=True, preview_transit=preview_transit)
+    st.stop()
+
+
 @st.cache_resource(show_spinner=False)
 def get_retrieval_collection(collection_name: str):
     """首次检索时加载 Chroma 和向量模型，之后在本进程中复用。"""
+    if PORTABLE_MODE:
+        from portable_retrieval import PortableCollection
+        return PortableCollection()
     from rag import get_collection
 
     return get_collection(collection_name)
@@ -464,7 +483,8 @@ def _render_book_original(
             elif book_name == "滴天髓" and book_mode == "day_stem_exact":
                 st.caption(f"出处：{metadata['citation']}｜本条为日干专论，含原注与任氏注；篇名为整理标签。")
             else:
-                st.caption(f"出处：{metadata['citation']}｜语义参考，适用条件未核定")
+                reference_label = "本地段落关键词参考（非向量检索）" if retrieval_result.get("book_modes", {}).get(book_name) == "local_text_reference" else "语义参考"
+                st.caption(f"出处：{metadata['citation']}｜{reference_label}，适用条件未核定")
             st.caption(f"引用 ID：{metadata['source_id']}")
 
     if book_name == "三命通会" and book_mode == "four_part":
@@ -606,70 +626,79 @@ def render_birth_form() -> None:
 
     st.markdown("### 出生地点")
     location = None
-    try:
-        with st.spinner("正在载入省份列表……"):
-            provinces = load_regions("100000")
-        province_col, city_col, county_col = st.columns(3)
-        with province_col:
-            selected_province = st.selectbox("省 / 直辖市 / 自治区", provinces, format_func=lambda item: item["name"], key="birth_province", index=None, placeholder="请选择省份")
-        selected_city = None
-        selected_county = None
-        cities = []
-        if selected_province:
-            is_municipality = selected_province["adcode"] in {"110000", "120000", "310000", "500000", "810000", "820000"}
-            if is_municipality:
-                province_children = []
-            else:
-                with st.spinner("正在载入城市列表……"):
-                    province_children = load_regions(selected_province["adcode"])
-            cities = [selected_province] if is_municipality else (province_children or [selected_province])
-        with city_col:
-            selected_city = st.selectbox(
-                "城市",
-                cities,
-                format_func=lambda item: item["name"],
-                key=f"birth_city_{selected_province['adcode']}" if selected_province else "birth_city_waiting",
-                index=None,
-                placeholder="请选择城市" if selected_province else "请先选择省份",
-                disabled=not bool(selected_province),
-            )
-
-        counties = []
-        if selected_city and selected_city.get("children_num", 1) > 0:
-            with st.spinner("正在载入县区列表……"):
-                counties = load_regions(selected_city["adcode"])
-        if not selected_city:
-            with county_col:
-                st.selectbox("县 / 区", [], key="birth_county_waiting", index=None, placeholder="请先选择城市", disabled=True)
-        elif counties:
-            with county_col:
-                selected_county = st.selectbox(
-                    "县 / 区",
-                    counties,
+    load_location = not PORTABLE_MODE or st.checkbox(
+        "选择出生地点（需联网加载地点）", value=False, key="portable_load_location"
+    )
+    if load_location:
+        try:
+            with st.spinner("正在载入省份列表……"):
+                provinces = load_regions("100000")
+            province_col, city_col, county_col = st.columns(3)
+            with province_col:
+                selected_province = st.selectbox("省 / 直辖市 / 自治区", provinces, format_func=lambda item: item["name"], key="birth_province", index=None, placeholder="请选择省份")
+            selected_city = None
+            selected_county = None
+            cities = []
+            if selected_province:
+                is_municipality = selected_province["adcode"] in {"110000", "120000", "310000", "500000", "810000", "820000"}
+                if is_municipality:
+                    province_children = []
+                else:
+                    with st.spinner("正在载入城市列表……"):
+                        province_children = load_regions(selected_province["adcode"])
+                cities = [selected_province] if is_municipality else (province_children or [selected_province])
+            with city_col:
+                selected_city = st.selectbox(
+                    "城市",
+                    cities,
                     format_func=lambda item: item["name"],
-                    key=f"birth_county_{selected_city['adcode']}",
+                    key=f"birth_city_{selected_province['adcode']}" if selected_province else "birth_city_waiting",
                     index=None,
-                    placeholder="请选择县区",
+                    placeholder="请选择城市" if selected_province else "请先选择省份",
+                    disabled=not bool(selected_province),
                 )
-        if selected_province and selected_city and (selected_county or not counties):
-            final_region = selected_county or {**selected_city, "coordinate_level": "市中心"}
-            place_path = [selected_province["name"], selected_city["name"]]
-            if selected_county:
-                place_path.append(selected_county["name"])
-            location = {
-                **final_region,
-                "path": place_path,
-                "coordinate_level": final_region.get("coordinate_level", "区县中心"),
-                "timezone": {"台湾省": "Asia/Taipei", "香港特别行政区": "Asia/Hong_Kong", "澳门特别行政区": "Asia/Macau"}.get(selected_province["name"], "Asia/Shanghai"),
-            }
-            st.caption(f"地点：{location_label(location)}　｜　{location['coordinate_level']}坐标：{float(location['latitude']):.4f}, {float(location['longitude']):.4f}　｜　时区：{location['timezone']}")
-    except Exception as error:
-        st.error(f"行政区地点数据暂时无法加载，请检查网络后刷新页面：{error}")
-    st.caption("仅提供中国省、市、县区三级选择。区县中心坐标用于真太阳时修正，不等同于具体医院坐标。行政区数据由 DataV.GeoAtlas 提供。")
+
+            counties = []
+            if selected_city and selected_city.get("children_num", 1) > 0:
+                with st.spinner("正在载入县区列表……"):
+                    counties = load_regions(selected_city["adcode"])
+            if not selected_city:
+                with county_col:
+                    st.selectbox("县 / 区", [], key="birth_county_waiting", index=None, placeholder="请先选择城市", disabled=True)
+            elif counties:
+                with county_col:
+                    selected_county = st.selectbox(
+                        "县 / 区",
+                        counties,
+                        format_func=lambda item: item["name"],
+                        key=f"birth_county_{selected_city['adcode']}",
+                        index=None,
+                        placeholder="请选择县区",
+                    )
+            if selected_province and selected_city and (selected_county or not counties):
+                final_region = selected_county or {**selected_city, "coordinate_level": "市中心"}
+                place_path = [selected_province["name"], selected_city["name"]]
+                if selected_county:
+                    place_path.append(selected_county["name"])
+                location = {
+                    **final_region,
+                    "path": place_path,
+                    "coordinate_level": final_region.get("coordinate_level", "区县中心"),
+                    "timezone": {"台湾省": "Asia/Taipei", "香港特别行政区": "Asia/Hong_Kong", "澳门特别行政区": "Asia/Macau"}.get(selected_province["name"], "Asia/Shanghai"),
+                }
+                st.caption(f"地点：{location_label(location)}　｜　{location['coordinate_level']}坐标：{float(location['latitude']):.4f}, {float(location['longitude']):.4f}　｜　时区：{location['timezone']}")
+        except Exception as error:
+            st.error(f"行政区地点数据暂时无法加载，请检查网络后刷新页面：{error}")
+        st.caption("仅提供中国省、市、县区三级选择。区县中心坐标用于真太阳时修正，不等同于具体医院坐标。行政区数据由 DataV.GeoAtlas 提供。")
+
+    else:
+        st.caption("按输入的当地钟表时间排盘；需要真太阳时修正时，再勾选加载出生地点。")
+        st.session_state["use_true_solar_time"] = False
 
     use_true_solar_time = st.checkbox(
         "按出生地经度修正真太阳时",
-        value=True,
+        value=not PORTABLE_MODE,
+        disabled=not load_location,
         help="使用已选地点返回的经度和时区计算；取消勾选则按输入的当地钟表时间排盘。",
         key="use_true_solar_time",
     )
@@ -857,13 +886,16 @@ if chart_result:
         try:
             # Initialize the model/index once, then query books in the same
             # order as the tabs. Each completed tab is rendered immediately.
-            with st.spinner("正在准备检索模型……"):
+            with st.spinner("正在准备本地古籍……" if PORTABLE_MODE else "正在准备检索模型……"):
                 collection = get_retrieval_collection("bazi_classics_paragraphs")
                 # Streamlit may keep imported modules alive across hot reloads.
                 import source_data as source_data_module
 
                 importlib.reload(source_data_module)
-                import rag as rag_module
+                if PORTABLE_MODE:
+                    import portable_retrieval as rag_module
+                else:
+                    import rag as rag_module
 
                 rag_module = importlib.reload(rag_module)
                 retriever_module_names = (

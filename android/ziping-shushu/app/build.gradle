@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python'
+}
+
+android {
+    namespace 'cn.zipingshushu.app'
+    compileSdk 35
+    signingConfigs {
+        release {
+            if (System.getenv('ZIPING_KEYSTORE')) {
+                storeFile file(System.getenv('ZIPING_KEYSTORE'))
+                storePassword System.getenv('ZIPING_KEYSTORE_PASSWORD')
+                keyAlias 'ziping'
+                keyPassword System.getenv('ZIPING_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    defaultConfig {
+        applicationId 'cn.zipingshushu.app'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+    }
+    sourceSets {
+        main { assets.srcDirs += ['../../../.tmp/android-stage/assets'] }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+chaquopy {
+    defaultConfig {
+        version '3.10'
+        buildPython System.getenv('ZIPING_BUILD_PYTHON') ?: 'python'
+        // Pure Python dependencies are staged from the pinned local build environment.
+    }
+    sourceSets {
+        main { srcDirs = ['../../../.tmp/android-stage/python'] }
+    }
+}

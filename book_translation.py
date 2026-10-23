@@ -11,7 +11,9 @@ from pathlib import Path
 
 from ai_analysis import AIError, MODEL, PROVIDERS, _completion, _request, message_budget, requires_thinking
 
-CACHE_DIR = Path(__file__).resolve().parent / ".cache" / "translations"
+from runtime_paths import CACHE_ROOT
+
+CACHE_DIR = CACHE_ROOT / "translations"
 PROMPT_VERSION = "classical-vernacular-1"
 MAX_PIECE = 800
 MAX_BATCH = 1600

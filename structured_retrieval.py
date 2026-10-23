@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parent
+from runtime_paths import RESOURCE_ROOT as ROOT
 ANNOTATION_FILE = ROOT / "data" / "annotations" / "conditions.json"
 
 

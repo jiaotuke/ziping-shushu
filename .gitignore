@@ -6,6 +6,12 @@ chroma_db/
 .cache/
 .tmp/
 .tools/
+.local/
+dist/
+android/**/build/
+android/**/.gradle/
+android/**/local.properties
+*.spec.bak
 data/source/*
 !data/source/.gitkeep
 !data/source/SOURCE.md

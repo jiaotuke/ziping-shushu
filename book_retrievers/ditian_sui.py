@@ -6,7 +6,9 @@ import re
 from source_data import make_source_id
 
 
-SOURCE_FILE = Path(__file__).resolve().parents[1] / "data" / "source" / "滴天髓.txt"
+from runtime_paths import RESOURCE_ROOT
+
+SOURCE_FILE = RESOURCE_ROOT / "data" / "source" / "滴天髓.txt"
 STEM_OPENERS = {
     "甲": "甲木参天", "乙": "乙木虽柔", "丙": "丙火猛烈", "丁": "丁火柔中",
     "戊": "戊土固重", "己": "己土卑湿", "庚": "庚金带煞", "辛": "辛金软弱",

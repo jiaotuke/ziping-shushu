@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+from runtime_paths import RESOURCE_ROOT as ROOT
 SOURCE_DIR = ROOT / "data" / "source"
 ZIPING_CHAPTERS_FILE = ROOT / "data" / "annotations" / "ziping_chapters.json"
 
