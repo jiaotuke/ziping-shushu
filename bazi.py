@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import argparse
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from lunar_python import Lunar, Solar
@@ -159,6 +160,24 @@ def calculate_pillars_chart(pillars: dict[str, str]) -> dict[str, object]:
         "时间说明": "按用户填写的四柱直接排盘，未提供公历出生日期，不进行真太阳时修正"
                     + ("；子时日时搭配可对应晚子时次日时干取法，保留输入，不反推日期" if late_zi else ""),
     }
+
+
+@lru_cache(maxsize=128)
+def find_pillar_birth_times(
+    year_pillar: str, month_pillar: str, day_pillar: str, hour_pillar: str,
+    latest_date: date,
+) -> tuple[str, ...]:
+    """Return matching dates with a library-selected hour, without choosing a birth year."""
+    names = ("年柱", "月柱", "日柱", "时柱")
+    pillars = calculate_pillars_chart(dict(zip(names, (year_pillar, month_pillar, day_pillar, hour_pillar))))["四柱"]
+    matches = set()
+    for solar in Solar.fromBaZi(*(pillars[name] for name in names), sect=2, base_year=1800):
+        birth = datetime.fromisoformat(solar.toYmdHms())
+        if date(1800, 1, 1) <= birth.date() <= latest_date:
+            # Keep the library's valid time at solar-term boundaries and late 子时.
+            if calculate_chart(birth)["四柱"] == pillars:
+                matches.add(birth.isoformat(sep=" "))
+    return tuple(sorted(matches, reverse=True))
 
 
 def calculate_lunar_chart(

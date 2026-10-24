@@ -10,8 +10,9 @@ import math
 import re
 from collections import Counter
 from functools import lru_cache
+from threading import RLock
 
-from source_data import load_source_records
+from source_data import load_source_records, source_version
 
 
 def tokens(text: str) -> list[str]:
@@ -46,7 +47,8 @@ class PortableCollection:
     def __init__(self):
         self.records = load_source_records()
         self.entries = []
-        self.df = Counter()
+        self._ranking = None
+        self._ranking_lock = RLock()
         for record in self.records:
             meta = {"source_id": str(record["source_id"]), "book_name": record["book_name"],
                     "source_file": record["source_file"], "chapter": record["section"],
@@ -54,10 +56,26 @@ class PortableCollection:
                     "citation": record["citation"], "retrieval_method": "本地段落关键词排序（非向量检索）"}
             if record.get("day_master"):
                 meta["day_master"] = record["day_master"]
-            counts = Counter(tokens(str(record["section"]) + " " + str(record["text"])))
-            self.df.update(counts.keys())
-            self.entries.append((record, meta, counts, sum(counts.values())))
-        self.average = sum(e[3] for e in self.entries) / max(len(self.entries), 1)
+            self.entries.append((record, meta))
+
+    def _ranking_data(self):
+        """Defer corpus tokenization until a book needs BM25 fallback ranking."""
+        with self._ranking_lock:
+            if self._ranking is None:
+                entries = []
+                df = Counter()
+                for record, meta in self.entries:
+                    counts = Counter(tokens(str(record["section"]) + " " + str(record["text"])))
+                    df.update(counts.keys())
+                    entries.append((record, meta, counts, sum(counts.values())))
+                average = sum(e[3] for e in entries) / max(len(entries), 1)
+                # Publish only the completed index so concurrent queries never
+                # observe partial document frequencies or incomplete entries.
+                self._ranking = (entries, df, average)
+            return self._ranking
+
+    def count(self):
+        return len(self.entries)
 
     def get(self, *, where=None, include=None, ids=None):
         entries = [e for e in self.entries if _matches(e[1], where) and (ids is None or e[1]["source_id"] in ids)]
@@ -65,15 +83,16 @@ class PortableCollection:
                 "documents": [e[0]["text"] for e in entries], "metadatas": [dict(e[1]) for e in entries]}
 
     def query(self, *, query_texts, n_results=1, where=None, **_):
+        entries, df, average = self._ranking_data()
         output = {"ids": [], "documents": [], "metadatas": [], "distances": []}
         for query in query_texts:
             terms = set(tokens(query))
             ranked = []
-            for record, meta, counts, length in self.entries:
+            for record, meta, counts, length in entries:
                 if not _matches(meta, where):
                     continue
-                score = sum(math.log(1 + (len(self.entries) - self.df[t] + .5) / (self.df[t] + .5))
-                            * counts[t] * 2.2 / (counts[t] + 1.2 * (.25 + .75 * length / max(self.average, 1)))
+                score = sum(math.log(1 + (len(entries) - df[t] + .5) / (df[t] + .5))
+                            * counts[t] * 2.2 / (counts[t] + 1.2 * (.25 + .75 * length / max(average, 1)))
                             for t in terms if counts[t])
                 ranked.append((score, int(record["line_number"]), record, meta))
             ranked.sort(key=lambda row: (-row[0], row[1], row[3]["source_id"]))
@@ -87,8 +106,16 @@ class PortableCollection:
 
 
 @lru_cache(maxsize=1)
-def get_collection():
+def _collection_for_version(_source_version: tuple):
     return PortableCollection()
+
+
+_COLLECTION_LOCK = RLock()
+
+
+def get_collection():
+    with _COLLECTION_LOCK:
+        return _collection_for_version(source_version())
 
 
 def retrieve_chart(chart: dict) -> dict:

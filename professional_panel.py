@@ -59,14 +59,14 @@ def render_professional_chart(chart: dict) -> None:
         if not gender:
             st.info("请在上方选择性别并重新点击‘开始排盘’。")
         elif not birth_iso:
-            st.info("当前仅提供四柱；请在排盘前补充对应出生时刻，或使用公历、农历方式排盘后查看大运。")
+            st.info("当前仅显示四柱原局；请重新排盘并选择匹配日期，或使用公历、农历方式查看大运。")
         wheel_chart(payload=payload, key=f"professional_empty_{PANEL_VERSION}", default=None)
         _render_relationship_sources()
         return
     try:
         luck = luck_cycles(birth_iso, gender, start_sect)
         if luck["pillars"] != chart["四柱"]:
-            st.error("补充时刻计算出的四柱与当前四柱不一致，请填写对应的排盘时刻。")
+            st.error("用于运程计算的日期与当前四柱不一致，请重新排盘。")
             wheel_chart(payload=payload, key=f"professional_mismatch_{PANEL_VERSION}", default=None)
             _render_relationship_sources()
             return

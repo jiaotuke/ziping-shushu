@@ -1,0 +1,2 @@
+ec15a6af305a4f4dd26d619c528366d210ceda50a08afa10d11190bfdb2c249b  ziping-shushu-skill-v0.6.0.zip
+8dc784a639069274ed0ccb53407b1822e1c106c31dd4c1581663eecf34e00eba  ziping-shushu-public-v0.6.0.zip

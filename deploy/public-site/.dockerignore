@@ -1,0 +1,12 @@
+**
+!Dockerfile
+!site/
+!site/**
+!maintenance/
+!maintenance/backup_public.py
+**/__pycache__/
+**/*.pyc
+**/.local/
+**/.cache/
+**/secrets.toml
+**/.env

@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 from pathlib import Path
+from threading import RLock
 from urllib.request import Request, urlopen
 from html.parser import HTMLParser
 
-import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-from source_data import load_source_records
+from source_data import load_source_records, source_version
 from structured_retrieval import filter_annotations, load_annotations, validate_annotations
 
 ROOT = Path(__file__).resolve().parent
@@ -282,17 +283,112 @@ def download_chaptered_book(source: dict) -> str:
 
 
 
+_COLLECTION_LOCK = RLock()
+_EMBEDDING_LOCK = RLock()
+_EMBEDDING = None
+
+
+def _configure_model_caches() -> Path:
+    """Set D-drive caches before Chroma or model dependencies are imported."""
+    cache_root = ROOT / ".cache"
+    os.environ["HF_HOME"] = str(cache_root / "huggingface")
+    os.environ["SENTENCE_TRANSFORMERS_HOME"] = str(cache_root / "sentence-transformers")
+    os.environ["TRANSFORMERS_CACHE"] = str(cache_root / "transformers")
+    return cache_root
+
+
+def _model_embedding_function():
+    """Load the unchanged vector model only when vectors are actually needed."""
+    global _EMBEDDING
+    with _EMBEDDING_LOCK:
+        if _EMBEDDING is None:
+            # CLI ingestion does not pass through app.py's cache configuration.
+            # Configure every large model cache before importing model packages.
+            cache_root = _configure_model_caches()
+            from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+
+            _EMBEDDING = SentenceTransformerEmbeddingFunction(
+                model_name=MODEL_NAME,
+                cache_folder=str(cache_root / "huggingface"),
+            )
+        return _EMBEDDING
+
+
+def _deferred_embedding_function():
+    """Retain Chroma's original model config without constructing its model.
+
+    Inheriting the installed adapter preserves its protocol and default vector
+    space across supported Chroma versions. Opening a collection with no EF
+    instead could create an empty database with a different default space.
+    """
+    from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+
+    class DeferredEmbeddingFunction(SentenceTransformerEmbeddingFunction):
+        def __init__(self):
+            # These are the same defaults used by the original eager adapter;
+            # its name/config/space methods remain inherited and serializable.
+            self.model_name = MODEL_NAME
+            self.device = "cpu"
+            self.normalize_embeddings = False
+            self.kwargs = {"cache_folder": str(ROOT / ".cache" / "huggingface")}
+
+        def __call__(self, input):
+            # Multiple browser sessions share a single model. Serialize the
+            # cold load and encode calls, including first-time CLI ingestion.
+            with _EMBEDDING_LOCK:
+                return _model_embedding_function()(input=input)
+
+        @staticmethod
+        def build_from_config(config):
+            # Chroma 1.x calls build_from_config from is_legacy() even while
+            # serializing a new collection. Its inherited implementation would
+            # eagerly construct a real model during metadata-only access.
+            deferred = DeferredEmbeddingFunction()
+            if config != deferred.get_config():
+                raise ValueError("检索模型配置不一致，请使用当前项目的模型配置。")
+            return deferred
+
+    return DeferredEmbeddingFunction()
+
+
+class _DeferredCollection:
+    """A normal Chroma collection whose database and model open on demand."""
+
+    def __init__(self, database_path: str, name: str):
+        self._database_path = database_path
+        self._name = name
+        self._collection = None
+        self._lock = RLock()
+
+    def _open(self):
+        with self._lock:
+            if self._collection is None:
+                _configure_model_caches()
+                import chromadb
+
+                client = chromadb.PersistentClient(path=self._database_path)
+                self._collection = client.get_or_create_collection(
+                    name=self._name,
+                    embedding_function=_deferred_embedding_function(),
+                    metadata={"description": "Source-cited paragraph records from four Chinese classics"},
+                )
+            return self._collection
+
+    def __getattr__(self, name):
+        # get/count/delete require the database, while query/add only load the
+        # embedding model when Chroma needs to embed text, never for metadata.
+        return getattr(self._open(), name)
+
+
+@lru_cache(maxsize=8)
+def _collection_for_version(database_path: str, collection_name: str, _source_version: tuple):
+    return _DeferredCollection(database_path, collection_name)
+
+
 def get_collection(collection_name: str = COLLECTION_NAME):
-    client = chromadb.PersistentClient(path=str(DB_DIR))
-    embedding = SentenceTransformerEmbeddingFunction(
-        model_name=MODEL_NAME,
-        cache_folder=str(ROOT / ".cache" / "huggingface"),
-    )
-    return client.get_or_create_collection(
-        name=collection_name,
-        embedding_function=embedding,
-        metadata={"description": "Source-cited paragraph records from four Chinese classics"},
-    )
+    """Reuse a lightweight, source-versioned handle without importing Chroma."""
+    with _COLLECTION_LOCK:
+        return _collection_for_version(str(DB_DIR.resolve()), collection_name, source_version())
 
 
 def ingest(book_name: str | None = None) -> None:
@@ -304,12 +400,18 @@ def ingest(book_name: str | None = None) -> None:
         print("没有找到正文。请先把有出处的 .txt 文件放入 data/source/，参照 docs/first-rag.md。")
         return
 
+    _configure_model_caches()
+    import chromadb
+
     client = chromadb.PersistentClient(path=str(DB_DIR))
     if book_name is None:
         try:
             client.delete_collection(COLLECTION_NAME)
         except Exception:
             pass
+        # A prior handle in the same process must not retain the deleted ID.
+        with _COLLECTION_LOCK:
+            _collection_for_version.cache_clear()
     collection = get_collection()
 
     if book_name is not None:

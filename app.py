@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 import os
-import json
 import html
 import re
-import importlib
 from datetime import date, datetime, time
 from calendar import monthrange
 from pathlib import Path
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 import streamlit as st
 
 from runtime_paths import RESOURCE_ROOT as ROOT, CACHE_ROOT
+from china_regions import load_regions
+from source_data import source_version
 
 PORTABLE_MODE = os.environ.get("ZIPING_PORTABLE") == "1"
 BOOK_NAMES = ["穷通宝鉴", "三命通会", "子平真诠", "滴天髓"]
@@ -41,14 +39,24 @@ st.markdown(
         color: #f2eee6;
     }
     .block-container { max-width: 920px; padding-top: 3.2rem; padding-bottom: 4rem; }
-    .hero { text-align: center; margin: 0 auto 2.5rem; }
-    .hero-rule { width: 72px; height: 1px; margin: 0 auto 1.4rem; background: #c99b55; opacity: .8; }
+    .hero { text-align: center; margin: 0 auto 1.5rem; }
+    .hero-rule { width: 88px; height: 1px; margin: 0 auto 1.6rem; background: #c99b55; opacity: .7; }
     .hero-title {
         color: #ead7ad; font-family: "Noto Serif CJK SC", "Songti SC", "STSong", serif;
-        font-size: clamp(2rem, 5vw, 3.25rem); font-weight: 500; letter-spacing: .22em;
+        font-size: clamp(1.5rem, 6.6vw, 3.85rem); font-weight: 500; letter-spacing: .18em;
+        line-height: 1.45;
         text-shadow: 0 2px 24px rgba(201, 155, 85, .17); white-space: nowrap;
     }
-    .hero-subtitle { color: #aaa49a; font-size: .92rem; letter-spacing: .3em; margin-top: .8rem; }
+    .hero-subtitle {
+        color: #b9b0a1; font-family: "Noto Serif CJK SC", "Songti SC", "STSong", serif;
+        font-size: clamp(.85rem, 1.8vw, 1.2rem); letter-spacing: .22em;
+        line-height: 1.8; margin-top: 1rem;
+    }
+    @media (max-width: 540px) {
+        .hero-title { letter-spacing: .08em; }
+        .hero-subtitle { letter-spacing: .1em; }
+        .hero-rule { width: 60px; margin-bottom: 1.2rem; }
+    }
     h2, h3 { color: #ead7ad !important; font-family: "Noto Serif CJK SC", "Songti SC", "STSong", serif !important; }
     [data-testid="stWidgetLabel"] p { color: #ddd7ca; }
     div[data-baseweb="select"] > div, div[data-baseweb="input"] > div,
@@ -79,14 +87,25 @@ st.markdown(
     .source-chapter-title { color: #ead7ad; margin: 0 0 .7rem; font-size: 1.15rem; }
     .source-reading-line { margin: 0 0 .65rem; text-indent: 2em; }
     </style>
-    <div class="hero">
-      <div class="hero-rule"></div>
-      <div class="hero-title">盈虚有数，宇宙无穷</div>
-      <div class="hero-subtitle">-子平术数，以古籍观命理</div>
-    </div>
     """,
     unsafe_allow_html=True,
 )
+
+
+from referral_public_panel import render_navigation, render_agent_center
+
+st.markdown(
+    """<div class="hero">
+      <div class="hero-rule"></div>
+      <div class="hero-title">盈虚有数，宇宙无穷</div>
+      <div class="hero-subtitle">-子平术数，以古籍观命理</div>
+    </div>""",
+    unsafe_allow_html=True,
+)
+workspace_page = render_navigation()
+if workspace_page == "agent":
+    render_agent_center()
+    st.stop()
 
 
 if st.query_params.get("preview") == "paid":
@@ -97,68 +116,20 @@ if st.query_params.get("preview") == "paid":
     import paid_analysis_panel as paid_preview_module
     import ai_panel as ai_preview_module
 
-    paid_preview_module = importlib.reload(paid_preview_module)
-    ai_preview_module = importlib.reload(ai_preview_module)
     preview_chart, preview_transit = paid_preview_module.preview_data()
     ai_preview_module.render_ai_panel(preview_chart, {"success": True}, preview_only=True, preview_transit=preview_transit)
     st.stop()
 
 
-@st.cache_resource(show_spinner=False)
-def get_retrieval_collection(collection_name: str):
-    """首次检索时加载 Chroma 和向量模型，之后在本进程中复用。"""
+@st.cache_resource(max_entries=4, show_spinner=False)
+def get_retrieval_collection(collection_name: str, source_signature: tuple):
+    """复用当前底本的检索句柄；嵌入模型仅在语义查询时加载。"""
     if PORTABLE_MODE:
         from portable_retrieval import PortableCollection
         return PortableCollection()
     from rag import get_collection
 
     return get_collection(collection_name)
-
-
-REGION_DATA_DIR = CACHE_ROOT / "china_admin"
-REGION_API = "https://geo.datav.aliyun.com/areas_v3/bound"
-
-
-@st.cache_data(ttl=7 * 86400, show_spinner=False)
-def load_regions(adcode: str) -> list[dict]:
-    """Fetch and cache one level of China's administrative divisions on D drive."""
-    REGION_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    cached_file = REGION_DATA_DIR / f"{adcode}_full.json"
-    if cached_file.exists():
-        payload = json.loads(cached_file.read_text(encoding="utf-8"))
-    else:
-        request = Request(
-            f"{REGION_API}/{adcode}_full.json",
-            headers={"User-Agent": "QiongTongBaoJian-Learning-App/0.1"},
-        )
-        try:
-            with urlopen(request, timeout=20) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except HTTPError as error:
-            # County-level cities such as Jiyuan have no county-level children.
-            # DataV may return 404 for that missing *_full.json endpoint.
-            if error.code == 404:
-                return []
-            raise
-        cached_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-
-    regions = []
-    for feature in payload.get("features", []):
-        properties = feature.get("properties") or {}
-        name = properties.get("name")
-        code = properties.get("adcode")
-        center = properties.get("center")
-        if name and code and center and len(center) >= 2:
-            regions.append(
-                {
-                    "name": name,
-                    "adcode": str(code),
-                    "longitude": center[0],
-                    "latitude": center[1],
-                    "children_num": int(properties.get("childrenNum") or 0),
-                }
-            )
-    return regions
 
 
 def location_label(location: dict) -> str:
@@ -203,6 +174,8 @@ def make_chart(
         return civil_chart, None
     if location is None:
         raise ValueError("请先搜索并选择出生地点，再使用真太阳时修正。")
+    if location.get("longitude") is None:
+        raise ValueError("所选地点的本地资料未提供经度，无法修正真太阳时；请选择有经度的地点，或取消真太阳时修正后按钟表时间排盘。")
 
     fold = {"自动": None, "夏令时第一次": 0, "夏令时第二次": 1}[fold_choice]
     true_solar_time, utc_offset, equation_minutes = convert_to_true_solar_time(
@@ -341,7 +314,12 @@ def queue_retrieval() -> None:
     """Reuse successful retrieval for this chart; the button then navigates only."""
     st.session_state["active_panel"] = "books"
     cached = st.session_state.get("retrieval_result", {})
-    if cached.get("success") and cached.get("version") == RETRIEVAL_VERSION:
+    current_sources = source_version()
+    if (
+        cached.get("success")
+        and cached.get("version") == RETRIEVAL_VERSION
+        and cached.get("source_version", current_sources) == current_sources
+    ):
         return
     if not st.session_state.get("retrieval_running", False):
         st.session_state["retrieval_requested"] = True
@@ -360,12 +338,7 @@ def render_book_result(
     with original_tab:
         _render_book_original(book_name, book_results, retrieval_result, chart)
     with translation_tab:
-        import book_translation as book_translation_module
-
-        importlib.reload(book_translation_module)
         import translation_panel as translation_panel_module
-
-        translation_panel_module = importlib.reload(translation_panel_module)
         translation_panel_module.render_translation_panel(book_name, book_results)
 
 
@@ -560,20 +533,35 @@ def render_birth_form() -> None:
                     placeholder=f"请先选择{prerequisite}" if prerequisite else f"请选择{name}",
                     format_func=lambda p, late_choice=options[-1] if name == "时柱" and options else None: p + "（晚子时）" if p == late_choice else p,
                 )
-        st.caption("选择年柱后可选月柱，选择日柱后可选时柱；无需出生日期和地点。时柱末项兼容晚子时取法。")
+        st.caption("选择年柱后可选月柱，选择日柱后可选时柱；无需手填出生日期、时刻和地点。时柱末项兼容晚子时取法。")
         professional_birth = None
-        with st.expander("补充出生时刻（可选，用于专业细盘）"):
-            st.caption("四柱不能唯一确定出生日期。需要查看大运时，请补充与所选四柱对应的公历日期和排盘时刻。")
-            extra_date_col, extra_time_col = st.columns([2, 1])
-            with extra_date_col:
-                extra_date = st.date_input("对应公历出生日期", value=None, min_value=date(1800, 1, 1),
-                                            max_value=date(2200, 12, 31), key="manual_professional_birth_date")
-            with extra_time_col:
-                extra_time = st.time_input("对应排盘时刻", value=None, key="manual_professional_birth_time")
-            if extra_date is not None and extra_time is not None:
-                professional_birth = datetime.combine(extra_date, extra_time).isoformat(sep=" ")
+        birth_candidates = ()
+        if all(manual_pillars.values()):
+            from bazi import find_pillar_birth_times
+
+            birth_candidates = find_pillar_birth_times(
+                *(manual_pillars[name] for name in ("年柱", "月柱", "日柱", "时柱")),
+                latest_date=date.today(),
+            )
+            if len(birth_candidates) == 1:
+                professional_birth = birth_candidates[0]
+                birth = datetime.fromisoformat(professional_birth)
+                st.caption(f"匹配公历日期：{birth:%Y-%m-%d}｜按时柱默认时刻 {birth:%H:%M} 计算大运。")
+            elif birth_candidates:
+                if st.session_state.get("manual_matched_birth") not in birth_candidates:
+                    st.session_state["manual_matched_birth"] = None
+                professional_birth = st.selectbox(
+                    "匹配的公历出生日期", birth_candidates, index=None, key="manual_matched_birth",
+                    placeholder="找到多个匹配日期，请选择出生日期",
+                    format_func=lambda value: datetime.fromisoformat(value).strftime("%Y-%m-%d（默认 %H:%M）"),
+                )
+                st.caption("四柱对应多个日期，请确认出生日期；时刻按时柱自动取默认值。")
+            else:
+                st.info("1800年至今未找到匹配日期，仍可查看原局；大运可改用公历或农历方式计算。")
         st.button("开始排盘", type="primary", use_container_width=True,
-                  disabled=st.session_state.get("analysis_running", False) or not gender or not all(manual_pillars.values()),
+                  disabled=(st.session_state.get("analysis_running", False) or not gender
+                            or not all(manual_pillars.values())
+                            or (len(birth_candidates) > 1 and not professional_birth)),
                   on_click=queue_analysis, key="start_analysis")
         if st.session_state.get("analysis_running", False):
             st.info("正在排盘，请稍候……")
@@ -627,7 +615,7 @@ def render_birth_form() -> None:
     st.markdown("### 出生地点")
     location = None
     load_location = not PORTABLE_MODE or st.checkbox(
-        "选择出生地点（需联网加载地点）", value=False, key="portable_load_location"
+        "选择出生地点（本地地点数据）", value=False, key="portable_load_location"
     )
     if load_location:
         try:
@@ -686,10 +674,13 @@ def render_birth_form() -> None:
                     "coordinate_level": final_region.get("coordinate_level", "区县中心"),
                     "timezone": {"台湾省": "Asia/Taipei", "香港特别行政区": "Asia/Hong_Kong", "澳门特别行政区": "Asia/Macau"}.get(selected_province["name"], "Asia/Shanghai"),
                 }
-                st.caption(f"地点：{location_label(location)}　｜　{location['coordinate_level']}坐标：{float(location['latitude']):.4f}, {float(location['longitude']):.4f}　｜　时区：{location['timezone']}")
+                if location.get("longitude") is not None and location.get("latitude") is not None:
+                    st.caption(f"地点：{location_label(location)}　｜　{location['coordinate_level']}坐标：{float(location['latitude']):.4f}, {float(location['longitude']):.4f}　｜　时区：{location['timezone']}")
+                else:
+                    st.caption(f"地点：{location_label(location)}　｜　当地行政中心坐标暂缺。使用真太阳时需选择有经度的地点；也可自行取消修正，按钟表时间排盘。")
         except Exception as error:
-            st.error(f"行政区地点数据暂时无法加载，请检查网络后刷新页面：{error}")
-        st.caption("仅提供中国省、市、县区三级选择。区县中心坐标用于真太阳时修正，不等同于具体医院坐标。行政区数据由 DataV.GeoAtlas 提供。")
+            st.error(f"本地行政区地点数据暂时无法加载，请检查项目的数据文件：{error}")
+        st.caption("仅提供中国省、市、县区三级选择。地点列表从本地读取；中心坐标用于真太阳时修正，不等同于具体医院坐标。数据来源与版本见 data/regions/SOURCE.md。")
 
     else:
         st.caption("按输入的当地钟表时间排盘；需要真太阳时修正时，再勾选加载出生地点。")
@@ -748,11 +739,15 @@ if submitted:
             raise ValueError("请先选择性别。")
         if form_data["calendar_type"] == "四柱八字":
             import bazi as bazi_module
-
-            importlib.reload(bazi_module)
             chart = bazi_module.calculate_pillars_chart(form_data["pillars"])
-            if form_data.get("professional_birth"):
-                chart["专业出生时刻"] = form_data["professional_birth"]
+            if professional_birth := form_data.get("professional_birth"):
+                birth = datetime.fromisoformat(professional_birth)
+                if bazi_module.calculate_chart(birth)["四柱"] != chart["四柱"]:
+                    raise ValueError("匹配日期与所选四柱不一致，请重新选择日期。")
+                chart["专业出生时刻"] = professional_birth
+                chart["时间说明"] = ("四柱直接按输入排盘，不进行真太阳时修正；"
+                                     f"大运采用反查匹配日期 {birth:%Y-%m-%d} 与时柱默认时刻 {birth:%H:%M}，"
+                                     "起运时刻按此默认值计算")
             correction = None
         else:
             chart, correction = make_chart(
@@ -796,19 +791,13 @@ if chart_result:
     with basic_tab:
         show_pillars(chart)
     with professional_tab:
-        import professional_chart as professional_chart_module
-
-        importlib.reload(professional_chart_module)
-        import pillar_relationships as pillar_relationships_module
-
-        importlib.reload(pillar_relationships_module)
         import professional_panel as professional_panel_module
-
-        professional_panel_module = importlib.reload(professional_panel_module)
         professional_panel_module.render_professional_chart(chart)
     if chart.get("输入历法") == "四柱八字":
         st.caption("四柱输入：" + "　".join(f"{name} {pillar}" for name, pillar in chart["四柱"].items())
                    + "｜直接按输入四柱排盘")
+        if chart.get("专业出生时刻"):
+            st.caption(f"大运采用匹配日期与时柱默认时刻：{chart['专业出生时刻']}；起运时刻按此默认值计算。")
     else:
         st.caption(
             f"出生信息：{chart.get('输入历法', '公历')} {chart.get('输入出生时间')}｜"
@@ -825,7 +814,15 @@ if chart_result:
             st.write(f"修正前四柱：{correction['原始排盘']['四柱']}")
 
     retrieval_result = st.session_state.get("retrieval_result")
-    if retrieval_result and retrieval_result.get("version") != RETRIEVAL_VERSION:
+    current_sources = source_version()
+    if retrieval_result:
+        # Preserve an existing session when upgrading the application. New
+        # source edits subsequently invalidate this session's retrieval too.
+        retrieval_result.setdefault("source_version", current_sources)
+    if retrieval_result and (
+        retrieval_result.get("version") != RETRIEVAL_VERSION
+        or retrieval_result.get("source_version") != current_sources
+    ):
         st.session_state.pop("retrieval_result", None)
         retrieval_result = None
     retrieval_ready = bool(retrieval_result and retrieval_result.get("success"))
@@ -873,6 +870,7 @@ if chart_result:
         books_available: set[str] = set()
         retrieval_result = {
             "version": RETRIEVAL_VERSION,
+            "source_version": current_sources,
             "results_by_book": results_by_book,
             "book_modes": book_modes,
             "book_errors": book_errors,
@@ -884,38 +882,24 @@ if chart_result:
         }
         st.session_state["retrieval_result"] = retrieval_result
         try:
-            # Initialize the model/index once, then query books in the same
-            # order as the tabs. Each completed tab is rendered immediately.
-            with st.spinner("正在准备本地古籍……" if PORTABLE_MODE else "正在准备检索模型……"):
-                collection = get_retrieval_collection("bazi_classics_paragraphs")
-                # Streamlit may keep imported modules alive across hot reloads.
-                import source_data as source_data_module
-
-                importlib.reload(source_data_module)
+            # Exact source lookups can finish before a semantic query loads
+            # the vector model. Keep imports stable so process caches survive.
+            with st.spinner("正在准备本地古籍……"):
+                collection = get_retrieval_collection("bazi_classics_paragraphs", current_sources)
                 if PORTABLE_MODE:
                     import portable_retrieval as rag_module
                 else:
                     import rag as rag_module
-
-                rag_module = importlib.reload(rag_module)
-                retriever_module_names = (
-                    "book_retrievers.common",
-                    "book_retrievers.qiong_tong_bao_jian",
-                    "book_retrievers.sanming_tonghui",
-                    "book_retrievers.ziping_zhenquan",
-                    "book_retrievers.ditian_sui",
-                    "book_retrievers.registry",
-                )
-                for module_name in retriever_module_names:
-                    importlib.reload(importlib.import_module(module_name))
-                retriever_registry = importlib.import_module("book_retrievers.registry")
+                from book_retrievers import registry as retriever_registry
                 source_records = rag_module.load_source_records()
                 books_available = {str(record["book_name"]) for record in source_records}
                 retrieval_result["books_available"] = sorted(books_available)
 
-            book_tabs = st.tabs(BOOK_NAMES)
-            for book_name, tab in zip(BOOK_NAMES, book_tabs):
-                with tab:
+            book_tabs = dict(zip(BOOK_NAMES, st.tabs(BOOK_NAMES)))
+            # Reading-tab order stays the same; exact lookups are completed
+            # before the book that always needs semantic candidate ranking.
+            for book_name in ("穷通宝鉴", "三命通会", "滴天髓", "子平真诠"):
+                with book_tabs[book_name]:
                     if book_name not in books_available:
                         st.info(f"《{book_name}》尚未录入书库。")
                         results_by_book[book_name] = []
@@ -973,24 +957,9 @@ if chart_result:
                         continue
                     render_book_result(book_name, book_results, retrieval_result, chart)
     elif st.session_state.get("active_panel") == "ai":
-        import citation_audit as citation_audit_module
-
-        importlib.reload(citation_audit_module)
-        import report_presentation as report_presentation_module
-        importlib.reload(report_presentation_module)
-        import ai_analysis as ai_analysis_module
-        importlib.reload(ai_analysis_module)
-
-        # Refresh shared report logic without restarting the server or discarding session progress.
-        import luck_analysis as luck_analysis_module
-        importlib.reload(luck_analysis_module)
-        import luck_chart as luck_chart_module
-        importlib.reload(luck_chart_module)
-        import report_downloads as report_downloads_module
-        importlib.reload(report_downloads_module)
-
+        # Imports are reused within this process. Restart the server after
+        # updating application code instead of clearing caches on every rerun.
         import ai_panel as ai_panel_module
-        ai_panel_module = importlib.reload(ai_panel_module)
         ai_panel_module.render_ai_panel(chart, retrieval_result)
     elif not retrieval_ready:
         st.caption("四柱已排出。点击“古籍检索”查看原文；检索成功后可继续使用“AI 解读”。")
@@ -999,4 +968,4 @@ with st.expander("关于当前版本"):
     st.write("这是本机学习版网页。出生地点通过省、市、县区逐级选择；真太阳时修正使用所选区县中心的经度和对应时区。")
     st.write("《穷通宝鉴》按日干与月令直接定位正文；原文中的具体条件仍需结合命盘核对。")
     st.write("排盘由 lunar-python 计算；专业细盘支持运程浏览及原局与运年月日关系。AI 解读可选择智谱或 DeepSeek，默认分析原局，也可结合当前选定运年、流月、流日及古籍资料。")
-    st.caption("行政区数据来源：DataV.GeoAtlas。区县中心坐标为近似位置，不代表具体出生医院。")
+    st.caption("行政区列表使用随项目提供的本地数据，来源与版本见 data/regions/SOURCE.md。区县中心坐标为近似位置，不代表具体出生医院。")

@@ -9,12 +9,7 @@ from datetime import date, datetime
 
 import streamlit as st
 
-WECHAT_ID = "bxzgf-bxbgf"
-PLANS = (
-    {"id": "natal", "title": "原局解读", "price": "6.90", "description": "原局八步分析，结合古籍梳理旺衰、格局与取用。"},
-    {"id": "annual", "title": "大运流年", "price": "12.90", "description": "原局、前六步大运详解与评分K线，再详解选定流年。"},
-    {"id": "daily", "title": "运年月日详解", "price": "19.90", "description": "原局、前六步大运与评分K线，再详解选定流年、流月、流日。"},
-)
+from referral_common import PLANS, WECHAT_ID
 
 
 def _select_plan(plan_id: str) -> None:
@@ -216,7 +211,11 @@ def render_paid_panel(chart: dict, retrieval: dict | None, *, transit: dict | No
             st.markdown(f'<div class="consult-scope"><span>{_esc(label)}</span><div>{_esc(value)}</div></div>', unsafe_allow_html=True)
         if selector_error or unavailable:
             st.info(selector_error or unavailable)
-        st.caption("可将选定范围告知作者。此页面仅展示咨询信息，联系微信：" + WECHAT_ID)
+        st.caption("可将选定范围与咨询编号一起告知作者，联系微信：" + WECHAT_ID)
+    from referral_public_panel import render_consultation_ticket
+
+    render_consultation_ticket(selected, key="paid_analysis", enabled=not bool(selector_error or unavailable),
+                               preview_only=preview_only)
     if preview_only:
         st.caption("当前使用演示命盘预览咨询入口，不影响你的实际排盘资料。")
 

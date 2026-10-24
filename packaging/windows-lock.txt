@@ -30,6 +30,7 @@ python-dateutil==3.0.0
 python-multipart==0.0.32
 pytz==2026.5
 pywin32-ctypes==0.2.3
+qrcode==8.2
 referencing==0.37.0
 requests==2.34.2
 rpds-py==0.30.0

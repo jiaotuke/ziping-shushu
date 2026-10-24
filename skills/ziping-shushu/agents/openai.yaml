@@ -1,0 +1,4 @@
+interface:
+  display_name: "子平术数"
+  short_description: "排盘与四书白话解读；明确要求时执行十年大运评分及交互K线"
+  default_prompt: "使用 $ziping-shushu 根据我提供的出生信息排盘，结合四本古籍给出有出处的白话解读。"

@@ -1,0 +1,54 @@
+name: ziping-public
+
+services:
+  web:
+    build: .
+    image: ziping-public:${ZIPING_RELEASE:-local}
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=128m,mode=1777
+    volumes:
+      - site_data:/var/lib/ziping
+    # Kept private. Public traffic is served by the HTTPS proxy below.
+    ports:
+      - "127.0.0.1:8501:8501"
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  gateway:
+    image: caddy:2-alpine
+    profiles: [https]
+    restart: unless-stopped
+    environment:
+      SITE_HOST: ${SITE_HOST:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  site_data:
+    name: ziping-public-data
+  caddy_data:
+    name: ziping-public-caddy-data
+  caddy_config:
+    name: ziping-public-caddy-config

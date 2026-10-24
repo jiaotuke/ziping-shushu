@@ -26,6 +26,10 @@ def _remember_failure(job: dict, error: AIError, *, provider: str, model: str) -
 
 
 def configured_api_key(provider: str = "zhipu") -> str:
+    if os.environ.get("ZIPING_PUBLIC_SITE") == "1":
+        # The public deployment only accepts this visitor's own key. Never
+        # fall back to an operator environment/secrets key for public users.
+        return ""
     key_env = PROVIDERS[provider]["key_env"]
     configured = os.environ.get(key_env, "").strip()
     if configured:
@@ -42,10 +46,7 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
     method = st.radio("解读方式", ["付费解读", "自备模型"], horizontal=True,
                       key="ai_service_mode_preview" if preview_only else "ai_service_mode")
     if method == "付费解读":
-        import importlib
         import paid_analysis_panel
-
-        paid_analysis_panel = importlib.reload(paid_analysis_panel)
         paid_analysis_panel.render_paid_panel(chart, retrieval, transit=preview_transit, preview_only=preview_only)
         return
     if preview_only:

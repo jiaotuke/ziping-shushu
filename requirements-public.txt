@@ -1,0 +1,4 @@
+lunar_python==1.4.8
+tzdata>=2024.1
+streamlit>=1.40,<2
+qrcode>=7.4,<9

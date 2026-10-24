@@ -1,0 +1,5 @@
+{$SITE_HOST} {
+    encode zstd gzip
+    header -Server
+    reverse_proxy web:8501
+}
