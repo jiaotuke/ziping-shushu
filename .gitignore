@@ -7,6 +7,7 @@ chroma_db/
 .tmp/
 .tools/
 .local/
+/security/
 dist/
 android/**/build/
 android/**/.gradle/
@@ -35,6 +36,8 @@ Thumbs.db
 /referral_admin_panel.py
 /referral_store.py
 /referral_panel.py
+/referral_cloud_sync.py
+/referral_local_backup.py
 /tools/start_local_admin.ps1
 /启动本机后台.cmd
 /docs/referral-isolation.md

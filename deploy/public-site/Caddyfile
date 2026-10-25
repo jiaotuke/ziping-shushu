@@ -1,5 +1,25 @@
+{
+    servers {
+        max_header_size 32KB
+        timeouts {
+            read_header 10s
+            idle 2m
+        }
+    }
+}
+
 {$SITE_HOST} {
     encode zstd gzip
-    header -Server
-    reverse_proxy web:8501
+    header {
+        -Server
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Strict-Transport-Security "max-age=86400"
+    }
+    request_body {
+        max_size 2MB
+    }
+    reverse_proxy web:8501 {
+        header_up X-Ziping-Client-IP {remote_host}
+    }
 }

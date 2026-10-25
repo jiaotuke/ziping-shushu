@@ -73,12 +73,14 @@ docker compose exec -T web python maintenance/backup_public.py
 docker compose cp web:/var/lib/ziping/backups ./backups
 ```
 
-将备份复制到另一台可信设备，不能只留在同一服务器。恢复前停止站点并核对备份，再由维护者操作；不要把旧副本直接覆盖正在使用的数据库。
+备份位置和频率由维护者根据数据价值决定；本项目当前不设置云端数据库定期下载到本机，部署工具保留服务器上的部署前副本。需要抵御整台服务器丢失风险时，另行配置可信设备或存储上的副本。恢复前停止站点并核对备份，再由维护者操作；不要把旧副本直接覆盖正在使用的数据库。
 
 更新前先备份，使用新版本标签构建；上线后验收，保留旧版本目录和镜像以便回滚。不要执行 `docker compose down -v`，该选项会删除持久卷。重启会中断网页会话，先让用户下载报告；长报告进度目前只保存在会话内。
 
 ## 发布边界
 
-此包没有镜像构建、运行验收或并发压测的通过记录。当前开发电脑没有Docker，未安装或下载大体积容器依赖；依赖与镜像应在所选云主机上构建。首次公网开放前需要完成基础页面、代理改密、数据持久化、模型会话隔离和备份恢复验收，并配置流量/滥用防护。
+v0.6.1对应站点代码已在维护者Linux环境完成镜像构建、HTTPS、WebSocket连接、文件哈希及私有后台隔离核对；未进行自动化测试、真实模型报告生成、并发压测或备份恢复演练。部署到其他环境仍需逐项核对页面、代理改密、持久化、密钥隔离及恢复能力；构建成功不代表模型平台不会限流。
+
+公开站点的来源限流、验证码、生成任务并发和容器资源限制见[安全说明](../../docs/security.md)。`maintenance/security_monitor.py` 在维护端运行，不应作为网站接口暴露。`tools/deploy_public_site.py` 使用维护者私下配置的SSH连接与部署记录；仓库不包含这些实际配置或凭据。
 
 参考：[Streamlit Docker部署](https://docs.streamlit.io/deploy/tutorials/docker)、[华为云WebSocket](https://support.huaweicloud.com/usermanual-functiongraph/functiongraph_01_1885.html)、[华为云存储选型](https://support.huaweicloud.com/productdesc-functiongraph/functiongraph_02_1002.html)、[华为云备案限制](https://support.huaweicloud.com/intl/zh-cn/icprb-icp/icp_01_0008.html)、[Docker持久卷](https://docs.docker.com/engine/storage/volumes/)、[Caddy反向代理](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)。

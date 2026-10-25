@@ -306,6 +306,9 @@ def refresh_legacy_chart_details(chart: dict) -> None:
 def queue_analysis() -> None:
     """排盘提交后锁住按钮，防止重复计算。"""
     if not st.session_state.get("analysis_running", False):
+        from public_security import permit_ui_action
+        if not permit_ui_action("chart"):
+            return
         st.session_state["analysis_requested"] = True
         st.session_state["analysis_running"] = True
 
@@ -322,6 +325,9 @@ def queue_retrieval() -> None:
     ):
         return
     if not st.session_state.get("retrieval_running", False):
+        from public_security import permit_ui_action
+        if not permit_ui_action("search"):
+            return
         st.session_state["retrieval_requested"] = True
         st.session_state["retrieval_running"] = True
         st.session_state["active_panel"] = "books"
@@ -538,11 +544,18 @@ def render_birth_form() -> None:
         birth_candidates = ()
         if all(manual_pillars.values()):
             from bazi import find_pillar_birth_times
-
-            birth_candidates = find_pillar_birth_times(
-                *(manual_pillars[name] for name in ("年柱", "月柱", "日柱", "时柱")),
-                latest_date=date.today(),
-            )
+            from public_security import check_action, PublicSecurityError
+            lookup_key = tuple(manual_pillars[name] for name in ("年柱", "月柱", "日柱", "时柱")) + (date.today(),)
+            if st.session_state.get("_last_pillar_lookup") == lookup_key:
+                birth_candidates = st.session_state.get("_last_pillar_candidates", ())
+            else:
+                try:
+                    check_action("chart")
+                    birth_candidates = find_pillar_birth_times(*lookup_key[:4], latest_date=lookup_key[4])
+                    st.session_state["_last_pillar_lookup"] = lookup_key
+                    st.session_state["_last_pillar_candidates"] = birth_candidates
+                except PublicSecurityError as error:
+                    st.warning(str(error))
             if len(birth_candidates) == 1:
                 professional_birth = birth_candidates[0]
                 birth = datetime.fromisoformat(professional_birth)
@@ -725,6 +738,8 @@ def render_birth_form() -> None:
         st.rerun()
 
 
+if security_notice := st.session_state.pop("_public_security_notice", None):
+    st.warning(security_notice)
 render_birth_form()
 form_data = st.session_state.get("birth_form", {})
 submitted = bool(st.session_state.pop("analysis_requested", False))

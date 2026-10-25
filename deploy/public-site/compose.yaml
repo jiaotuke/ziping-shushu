@@ -7,6 +7,10 @@ services:
     restart: unless-stopped
     read_only: true
     init: true
+    mem_limit: 1g
+    mem_reservation: 256m
+    cpus: 1.5
+    pids_limit: 256
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     tmpfs:
@@ -27,6 +31,9 @@ services:
     image: caddy:2-alpine
     profiles: [https]
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
     environment:
       SITE_HOST: ${SITE_HOST:-localhost}
     ports:

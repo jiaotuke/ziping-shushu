@@ -6,6 +6,7 @@ import hashlib
 import json
 import socket
 import copy
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -34,6 +35,32 @@ PROVIDERS = {
         "models": {
             "deepseek-flash": "DeepSeek Flash · 按量计费",
             "deepseek-v4-pro": "DeepSeek V4-Pro · 按量计费",
+        },
+    },
+    "inkstone": {
+        "name": "书生·端砚", "endpoint": "https://discovery-api.intern-ai.org.cn/v1/chat/completions",
+        "models_endpoint": "https://discovery-api.intern-ai.org.cn/v1/models",
+        "key_env": "TOKENPLAN_API_KEY",
+        "console": "https://discovery.intern-ai.org.cn/token-plan/home",
+        "docs": "https://discovery.intern-ai.org.cn/token-plan/home?tabIndex=3",
+        # Official TokenPlan model table; decision models use SystemOne and are excluded.
+        "models": {
+            "intern-s2": "书生-S2 · 额度与价格以平台为准",
+            "Atria-Dawn": "Atria-Dawn · 额度与价格以平台为准",
+            "Agents-A1": "Agents-A1 · 额度与价格以平台为准",
+            "Sage-A1.5": "Sage-A1.5 · 额度与价格以平台为准",
+            "deepseek-v4.1-flash-1017": "DeepSeek-V4.1-Flash-1017",
+            "deepseek-v4-pro-0813": "DeepSeek-V4-Pro-0813",
+            "glm-5.3": "GLM-5.3",
+            "kimi-k2.6": "Kimi-K2.6",
+            "minimax-m3": "MiniMax-M3",
+            "qwen3.8-27b": "Qwen3.8-27B",
+        },
+        "windows": {
+            "intern-s2": 256000, "Atria-Dawn": 512000, "Agents-A1": 256000,
+            "Sage-A1.5": 256000, "deepseek-v4.1-flash-1017": 1000000,
+            "deepseek-v4-pro-0813": 1000000, "glm-5.3": 1000000,
+            "kimi-k2.6": 256000, "minimax-m3": 1000000, "qwen3.8-27b": 256000,
         },
     },
 }
@@ -76,7 +103,9 @@ def model_limits(provider: str, model: str, custom_window: int | None = None) ->
         raise AIError("请选择支持的模型平台。")
     known = model in PROVIDERS[provider]["models"]
     if known:
-        window = 200000 if provider == "zhipu" and model.startswith("glm-4.7") else 1000000
+        window = PROVIDERS[provider].get("windows", {}).get(model)
+        if window is None:
+            window = 200000 if provider == "zhipu" and model.startswith("glm-4.7") else 1000000
     else:
         window = custom_window or 32768
         if type(window) is not int or not 8192 <= window <= 2000000:
@@ -90,6 +119,8 @@ def message_budget(messages: list[dict], *, provider: str, model: str,
     # No mismatched tokenizer or downloads. Disclose this conservative estimate.
     estimated_input = len(json.dumps(messages, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) + 256 * len(messages)
     output = 32768 if thinking else 8192
+    if provider == "inkstone":
+        output = min(output, 8192)
     if not limits["known"]:
         output = min(output, max(2048, limits["window"] // 4))
     reserve = max(4096, limits["window"] // 20)
@@ -137,9 +168,36 @@ def requires_thinking(provider: str, model: str) -> bool:
     return provider == "zhipu" and (name == "glm-5.3" or name.startswith("glm-5.3-"))
 
 
+def api_key_widget_key(provider: str) -> str:
+    """Keep each platform's credential widget separate across provider switches."""
+    return {"zhipu": "glm_api_key", "deepseek": "deepseek_api_key", "inkstone": "inkstone_api_key"}[provider]
+
+
 def _http_error_message(error: HTTPError, provider: str = "zhipu") -> str:
-    """Read only a numeric business code; never display the response body."""
+    """Expose only numeric or documented codes and a bounded request identifier."""
+    inkstone_advice = {
+        "invalid_request_error": (400, "端砚返回参数错误，请核对模型 ID、上下文窗口和该模型支持的接口。"),
+        "invalid_api_key": (401, "端砚返回密钥无效，请核对科研模型页面创建的完整 API Key。"),
+        "api_key_disabled": (403, "端砚 API Key 已停用，请到平台检查密钥状态。"),
+        "user_disabled": (403, "端砚账户已停用，请联系平台确认账户状态。"),
+        "whitelist_required": (403, "端砚要求调用白名单权限，请向平台申请权限。"),
+        "model_not_available": (404, "端砚返回模型不可用或无权限，请从模型列表复制可用的生成模型 ID。"),
+        "not_found": (404, "端砚接口或资源不存在，请核对调用地址。"),
+        "model_conflict": (409, "端砚模型配置冲突，请稍后手动重试或联系平台支持。"),
+        "rate_limit_exceeded": (429, "端砚返回调用限流。剩余墨点充足也可能触发 RPM、TPM 或周期限制；所有 API Key 共用账户额度。请暂停调用并核对平台限额，稍后只手动重试一次。"),
+        "quota_exceeded": (429, "端砚返回可用墨点额度不足。请核对账户余额与可用额度，恢复后再手动重试；更换同一账户的 Key 不会增加额度。"),
+        "internal_error": (500, "端砚内部服务异常，请稍后手动重试。"),
+        "upstream_failure": (502, "端砚上游模型服务异常，请稍后手动重试。"),
+        "channel_unreachable": (502, "端砚模型通道暂时不可达，请稍后手动重试或联系平台。"),
+        "service_unavailable": (503, "端砚模型服务暂时不可用，请稍后手动重试。"),
+        "auth_service_unavailable": (503, "端砚鉴权服务暂时不可用，请稍后手动重试。"),
+        "quota_config_changing": (503, "端砚配额配置正在切换，请稍后手动重试。"),
+        "quota_service_unavailable": (503, "端砚配额服务暂时不可用，请稍后手动重试。"),
+        "channel_credential_unavailable": (503, "端砚模型通道凭证暂时不可用，请联系平台或稍后手动重试。"),
+        "timeout": (504, "端砚模型响应超时，请稍后手动继续；已完成阶段无需重做。"),
+    }
     code = ""
+    request_id = ""
     try:
         raw = error.read(16385)
         if len(raw) <= 16384:
@@ -148,6 +206,16 @@ def _http_error_message(error: HTTPError, provider: str = "zhipu") -> str:
             value = str(detail.get("code", "")) if isinstance(detail, dict) else ""
             if value.isascii() and value.isdecimal() and len(value) <= 6:
                 code = value
+            if provider == "inkstone" and isinstance(detail, dict):
+                # Never echo arbitrary upstream messages, which may contain
+                # credentials or user inputs. Only accept documented enum values.
+                for candidate in (value, detail.get("type")):
+                    if isinstance(candidate, str) and candidate in inkstone_advice and inkstone_advice[candidate][0] == error.code:
+                        code = candidate
+                        break
+                identifier = body.get("request_id")
+                if isinstance(identifier, str) and re.fullmatch(r"req_[A-Za-z0-9_-]{8,80}", identifier):
+                    request_id = identifier
     except (ValueError, UnicodeError, OSError):
         pass
     advice = {
@@ -180,10 +248,24 @@ def _http_error_message(error: HTTPError, provider: str = "zhipu") -> str:
             503: "DeepSeek 服务当前繁忙，请稍后再试。",
         }
         message = messages.get(error.code, "DeepSeek 服务暂时未能完成请求，请稍后重试。")
+    elif provider == "inkstone":
+        messages = {
+            400: "书生·端砚未接受请求，请确认模型 ID 及该模型是否支持 Chat Completions。",
+            401: "书生·端砚 API Key 无效或已停用，请填写科研模型页面创建的完整密钥。",
+            402: "书生·端砚额度不足，请到科研模型页面查看墨点余额及使用限额。",
+            403: "书生·端砚拒绝访问，请检查账户及模型调用权限。",
+            404: "书生·端砚模型或接口不存在，请从平台模型列表复制准确的模型 ID。",
+            413: "请求内容超过书生·端砚限制，请核对模型上下文窗口。",
+            422: "书生·端砚请求参数不符合该模型要求，请检查模型 ID 及上下文窗口。",
+            429: "端砚拒绝了本次调用；仅凭 HTTP 429 无法确定是限速还是墨点额度不足。请查看平台 RPM、TPM、周期限额及调用记录，不要连续重试。",
+            503: "书生·端砚模型服务当前繁忙，请稍后手动重试。",
+        }
+        message = inkstone_advice[code][1] if code in inkstone_advice else messages.get(error.code, "书生·端砚暂时未能完成请求，请查看平台调用状态后重试。")
     else:
         message = advice.get(code, messages.get(error.code, "智谱服务暂时未能完成请求，请稍后重试。"))
     label = f"HTTP {error.code}" + (f" · 业务错误码 {code}" if code else " · 未取得业务错误码")
-    return f"{label}：{message}"
+    reference = f" 请求编号：{request_id}。" if request_id else ""
+    return f"{label}：{message}" + reference
 
 
 def _validated_transit(transit: dict, pillars: dict) -> dict:
@@ -385,7 +467,7 @@ def compatible_report_signatures(context: dict, *, provider: str, model: str, th
 
 
 def _request(api_key: str, payload: dict, *, timeout: int = 180, opener=None,
-             provider: str = "zhipu", model: str = MODEL) -> dict:
+             provider: str = "zhipu", model: str = MODEL, model_listing: bool = False) -> dict:
     if provider not in PROVIDERS:
         raise AIError("请选择支持的模型平台。")
     platform = PROVIDERS[provider]
@@ -396,15 +478,25 @@ def _request(api_key: str, payload: dict, *, timeout: int = 180, opener=None,
     if not api_key or any(char in api_key for char in "\r\n"):
         raise AIError(f"请填写有效的{platform['name']} API Key。")
     body = {**payload, "model": model}
+    if provider == "inkstone":
+        # TokenPlan documents the basic Chat Completions fields. Do not forward
+        # another provider's thinking/JSON/sampling extensions to its model gateway.
+        # The existing prompts and response validators still enforce JSON reports.
+        for option in ("thinking", "reasoning_effort", "response_format", "temperature", "top_p"):
+            body.pop(option, None)
+        body["stream"] = False
     if requires_thinking(provider, model):
         # Enforce at the transport boundary too, including custom IDs and connection checks.
         body["thinking"] = {"type": "enabled"}
         body.setdefault("reasoning_effort", "high")
         body["temperature"] = 1
         body["top_p"] = 0.95
-    request = Request(platform["endpoint"], data=json.dumps(body).encode("utf-8"), headers={
+    if model_listing and provider != "inkstone":
+        raise AIError("此平台未配置模型列表检查。")
+    request = Request(platform["models_endpoint"] if model_listing else platform["endpoint"],
+                      data=None if model_listing else json.dumps(body).encode("utf-8"), headers={
         "Content-Type": "application/json", "Authorization": f"Bearer {api_key}",
-    }, method="POST")
+    }, method="GET" if model_listing else "POST")
     try:
         with (opener or urlopen)(request, timeout=timeout) as response:
             raw = response.read(2_000_001)
@@ -451,6 +543,15 @@ def _completion(data: dict, *, draft_stage: str | None = None) -> str:
 
 
 def check_connection(api_key: str, *, opener=None, provider: str = "zhipu", model: str = MODEL) -> None:
+    if provider == "inkstone":
+        # This endpoint is documented as quota-free and does not generate text.
+        data = _request(api_key, {}, timeout=30, opener=opener, provider=provider, model=model, model_listing=True)
+        visible = data.get("data")
+        if not isinstance(visible, list):
+            raise AIError("书生·端砚未返回有效的生成模型列表，请稍后再试。")
+        if not any(isinstance(item, dict) and item.get("id") == model.strip() for item in visible):
+            raise AIError("此密钥的生成模型列表中没有所选模型，请从端砚“模型列表”复制有权限的准确模型 ID。")
+        return
     forced_thinking = requires_thinking(provider, model)
     payload = {
         "messages": [{"role": "user", "content": "请只回复：连接正常"}],

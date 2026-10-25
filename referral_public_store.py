@@ -20,6 +20,7 @@ class PublicStore:
         if demo and not maintenance and os.environ.get("ZIPING_ALLOW_REFERRAL_DEMO") != "1":
             raise ReferralError("此网站未启用演示身份。")
         self.demo = bool(demo)
+        self.maintenance = bool(maintenance)
         self.root = root or Path(os.environ.get("ZIPING_PUBLIC_DATA") or DATA_ROOT / ".local" / "public-site")
         self.root.mkdir(parents=True, exist_ok=True)
         self.path = self.root / ("public-demo.sqlite3" if demo else "public-live.sqlite3")
@@ -36,6 +37,7 @@ class PublicStore:
                 CREATE TABLE IF NOT EXISTS published_views (code TEXT PRIMARY KEY,document TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
             """)
+        os.chmod(self.path, 0o600)
 
     @contextmanager
     def db(self, *, write: bool = False):
@@ -59,6 +61,12 @@ class PublicStore:
             row = db.execute("SELECT code,display_name,grade FROM accounts WHERE code=? AND enabled=1",(code,)).fetchone()
             return dict(row) if row else None
 
+    def _security(self):
+        if self.demo or self.maintenance or os.environ.get("ZIPING_PUBLIC_SITE") != "1":
+            return None
+        from public_security import controls
+        return controls()
+
     def create_lead(self, request_key: str, plan_id: str, ref_code: str = "") -> dict:
         if plan_id not in PLAN_NAMES or not 12 <= len(request_key) <= 128:
             raise ReferralError("咨询信息不完整。")
@@ -68,6 +76,8 @@ class PublicStore:
                 if old["plan_id"]!=plan_id or old["ref_code"]!=ref_code:
                     raise ReferralError("咨询请求内容不一致。")
                 return dict(old)
+            if gate := self._security():
+                gate.rate("consultation")
             if ref_code and not db.execute("SELECT 1 FROM accounts WHERE code=? AND enabled=1",(ref_code,)).fetchone():
                 raise ReferralError("推广来源暂不可用，请联系作者核对。")
             cid = identifier("ZP")
@@ -81,18 +91,36 @@ class PublicStore:
         db.execute("INSERT INTO sessions VALUES(?,?,?)",(hashlib.sha256(token.encode()).hexdigest(),code,expires))
         return token
 
-    def login(self, login: str, password: str) -> str:
+    def login(self, login: str, password: str, *, captcha_id: str = "", captcha_answer: str = "") -> str:
+        gate = self._security()
+        if gate:
+            gate.rate("login")
         login = username(login)
+        if not isinstance(password,str) or len(password)>256:
+            raise ReferralError("登录名或密码不正确，或账号已暂停。")
         cutoff = (datetime.now(timezone.utc)-timedelta(minutes=15)).isoformat(timespec="seconds")
+        session = None
         with self.db(write=True) as db:
             db.execute("DELETE FROM attempts WHERE created_at<?",(cutoff,))
-            if db.execute("SELECT COUNT(*) FROM attempts WHERE username=?",(login,)).fetchone()[0]>=6:
+            failures = db.execute("SELECT COUNT(*) FROM attempts WHERE username=?",(login,)).fetchone()[0]
+            if failures>=6:
+                if gate:
+                    gate.audit("account_login_limited")
                 raise ReferralError("尝试次数较多，请 15 分钟后再试。")
+            if gate and (failures>=3 or gate.captcha_required()):
+                gate.verify_challenge(captcha_id,captcha_answer)
             account = db.execute("SELECT * FROM accounts WHERE username=? AND enabled=1",(login,)).fetchone()
             if account and password_matches(password,account["password_hash"]):
                 db.execute("DELETE FROM attempts WHERE username=?",(login,))
-                return self._session(db,account["code"])
-            db.execute("INSERT INTO attempts VALUES(?,?)",(login,now()))
+                session = self._session(db,account["code"])
+            else:
+                db.execute("INSERT INTO attempts VALUES(?,?)",(login,now()))
+        if session:
+            if gate:
+                gate.audit("login_succeeded")
+            return session
+        if gate:
+            gate.failed_login()
         raise ReferralError("登录名或密码不正确，或账号已暂停。")
 
     def require(self, db, token: str, *, allow_password_change: bool = False) -> dict:
@@ -118,6 +146,8 @@ class PublicStore:
             db.execute("DELETE FROM sessions WHERE digest=?",(hashlib.sha256(str(token).encode()).hexdigest(),))
 
     def change_password(self, token: str, old_password: str, new_password: str) -> str:
+        if gate := self._security():
+            gate.rate("password")
         with self.db(write=True) as db:
             user = self.require(db,token,allow_password_change=True)
             if not password_matches(old_password,user["password_hash"]):

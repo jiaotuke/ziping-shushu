@@ -1,0 +1,25 @@
+{
+  "version": "0.6.1",
+  "date": "2026-10-25",
+  "files": [
+    {
+      "name": "ziping-shushu-public-v0.6.1.zip",
+      "bytes": 868405,
+      "sha256": "4b94203be9298db00483fb9d2e4b8d0f97759d232e18faf483683b20089b8991"
+    }
+  ],
+  "includes_private_management": false,
+  "includes_business_data": false,
+  "includes_credentials": false,
+  "skill_updated": false,
+  "automated_tests_run": false,
+  "model_analysis_run": false,
+  "new_exe_apk_built": false,
+  "checks": [
+    "static-syntax",
+    "archive-whitelist",
+    "sensitive-content-scan",
+    "sha256"
+  ],
+  "cloud_updated_by_this_publication": false
+}

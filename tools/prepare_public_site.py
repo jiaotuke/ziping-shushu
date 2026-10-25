@@ -5,7 +5,7 @@ import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = (
-    "app.py","public_app.py","ai_panel.py","ai_analysis.py","bazi.py","book_translation.py",
+    "app.py","public_app.py","public_security.py","ai_panel.py","ai_analysis.py","bazi.py","book_translation.py",
     "china_regions.py","citation_audit.py","luck_analysis.py","luck_chart.py","paid_analysis_panel.py",
     "pillar_relationships.py","portable_retrieval.py","professional_chart.py","professional_panel.py",
     "rag.py","referral_common.py","referral_public_panel.py","referral_public_store.py","referral_site_sync.py",

@@ -8,8 +8,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import streamlit as st
+from public_security import generation_slot, PublicSecurityError
 
-from ai_analysis import AIError, PROVIDERS
+from ai_analysis import AIError, PROVIDERS, api_key_widget_key
 from ai_panel import configured_api_key
 from book_translation import generate_translation, load_translation, source_plan
 
@@ -109,15 +110,17 @@ def render_translation_panel(book_name: str, book_results: list[dict]) -> None:
             model = choice
         if provider == "zhipu" and model == "glm-4.7-flash":
             st.caption("免费模型仍受平台速率与可用性限制；失败后可手动重试或更换模型。")
+        elif provider == "inkstone":
+            st.caption("使用端砚对应模型的默认推理设置；墨点价格与周期额度以平台为准。")
         else:
             st.caption("所选模型可能按量计费，价格与额度以对应平台为准。")
         session_key = st.session_state.get("_ai_keys", {}).get(provider, "")
         if not session_key:
-            session_key = st.session_state.get("glm_api_key" if provider == "zhipu" else "deepseek_api_key", "")
+            session_key = st.session_state.get(api_key_widget_key(provider), "")
         local_key = configured_api_key(provider)
         credential_widget = prefix + "_key_" + provider
         entered = st.text_input(f"{platform['name']} API Key", type="password", value=session_key,
-                                key=credential_widget, on_change=_remember_key, args=(credential_widget, provider),
+                                key=credential_widget, max_chars=256, on_change=_remember_key, args=(credential_widget, provider),
                                 help="可复用 AI 解读中的对应平台密钥；也可直接在这里填写，无需先生成解读。")
         api_key = entered.strip() or session_key or local_key
         if api_key:
@@ -141,11 +144,11 @@ def render_translation_panel(book_name: str, book_results: list[dict]) -> None:
     if st.button(label, type="primary", disabled=not bool(api_key and model), key=prefix + "_generate_" + plan["key"]):
         progress = st.progress(0, text="正在准备逐段翻译……")
         try:
-            with st.spinner("正在翻译本篇原文，长文可能需要多批请求……"):
+            with generation_slot("translation"), st.spinner("正在翻译本篇原文，长文可能需要多批请求……"):
                 saved = generate_translation(api_key, plan, provider=provider, model=model, custom_window=custom_window,
                                              regenerate=bool(saved), progress=lambda done, total: progress.progress(done / total, text=f"已完成 {done}/{total} 个片段"))
             st.success("AI 译文已生成并保存。")
-        except AIError as error:
+        except (AIError, PublicSecurityError) as error:
             st.error(str(error))
         except OSError:
             st.error("本地译文保存失败，请检查项目目录的可写空间；已保存的旧译文仍可阅读。")

@@ -22,6 +22,7 @@ def main():
     # Reserve the destination to avoid overwriting an existing backup.
     with target.open("xb"):
         pass
+    os.chmod(target, 0o600)
     try:
         with sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True) as origin:
             with sqlite3.connect(target) as destination:

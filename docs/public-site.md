@@ -22,4 +22,4 @@ python -m venv .venv
 .\.venv\Scripts\python.exe tools/prepare_cloud_release.py
 ```
 
-也可直接下载 [v0.6.0 公开站点ZIP](../releases/v0.6.0/ziping-shushu-public-v0.6.0.zip)。仅部署白名单包，数据库和运行数据放独立持久目录；配置方法见 [部署说明](../deploy/public-site/README.md)。这次GitHub更新没有操作现有云端实例，也没有提供本版Docker构建或公网验收通过记录。
+也可直接下载 [v0.6.1 公开站点ZIP](../releases/v0.6.1/ziping-shushu-public-v0.6.1.zip)。仅部署白名单包，数据库和运行数据放独立持久目录；配置方法见 [部署说明](../deploy/public-site/README.md)，防刷与资源限制见 [安全说明](security.md)。对应站点代码已在维护环境完成Docker构建、HTTPS和WebSocket连接检查；未执行自动化测试、真实模型生成或并发压测。此次GitHub发布本身不操作云端实例。

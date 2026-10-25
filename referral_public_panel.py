@@ -235,15 +235,54 @@ def render_agent_center():
     token = st.session_state.get(token_key,"")
     user = store.identity(token)
     if not user:
+        from public_security import controls, enabled, CaptchaRequired, PublicSecurityError, login_needs_challenge
+        captcha_key = "public_login_captcha_" + _mode()
+        forced_key = "public_login_challenge_required_" + _mode()
+        error_key = "public_login_error_" + _mode()
+        challenge = None
+        needs_captcha = enabled() and (st.session_state.get(forced_key) or login_needs_challenge())
+        if error := st.session_state.pop(error_key, None):
+            st.error(error)
+        if needs_captcha:
+            challenge = st.session_state.get(captcha_key)
+            if not challenge or challenge[2] < datetime.now().timestamp():
+                try:
+                    challenge_id, png = controls().challenge()
+                    challenge = (challenge_id, png, datetime.now().timestamp()+180)
+                    st.session_state[captcha_key] = challenge
+                except PublicSecurityError as error:
+                    st.warning(str(error))
+                    return
         with st.form("public_agent_login",clear_on_submit=True):
             login = st.text_input("代理登录名",max_chars=32)
             password = st.text_input("密码",type="password",max_chars=256)
+            captcha_answer = ""
+            refresh_captcha = False
+            if challenge:
+                st.image(challenge[1], width=190)
+                captcha_answer = st.text_input("图片验证码（不区分大小写）", max_chars=5)
+                refresh_captcha = st.form_submit_button("换一张验证码")
             submitted = st.form_submit_button("登录代理中心",type="primary",use_container_width=True)
+        if refresh_captcha:
+            st.session_state.pop(captcha_key, None)
+            st.rerun()
         if submitted:
             try:
-                st.session_state[token_key] = store.login(login,password)
+                st.session_state[token_key] = store.login(login,password,
+                    captcha_id=challenge[0] if challenge else "", captcha_answer=captcha_answer)
+                st.session_state.pop(captcha_key, None)
+                st.session_state.pop(forced_key, None)
+                st.rerun()
+            except CaptchaRequired as error:
+                st.session_state[forced_key] = True
+                st.session_state[error_key] = str(error)
+                st.session_state.pop(captcha_key, None)
                 st.rerun()
             except ReferralError as error:
+                if needs_captcha or login_needs_challenge():
+                    st.session_state[error_key] = str(error)
+                    st.session_state.pop(captcha_key, None)
+                    st.rerun()
                 st.error(str(error))
         st.caption("账号由作者开通。忘记密码请联系作者获取新的临时密码。")
         return

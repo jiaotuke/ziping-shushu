@@ -5,7 +5,7 @@ root = Path(SPECPATH).parent
 project_modules = ["bazi", "professional_chart", "professional_panel", "pillar_relationships", "sanming_shensha",
                    "ai_analysis", "ai_panel", "paid_analysis_panel", "report_downloads", "source_data", "runtime_paths", "china_regions",
                    "citation_audit", "book_translation", "translation_panel", "structured_retrieval", "portable_retrieval",
-                   "luck_analysis", "luck_chart", "report_presentation", "referral_common", "referral_public_store", "referral_public_panel"]
+                   "luck_analysis", "luck_chart", "report_presentation", "referral_common", "referral_public_store", "referral_public_panel", "public_security"]
 datas = [(str(root / "app.py"), "."), (str(root / "data/source"), "data/source"),
          (str(root / "data/annotations"), "data/annotations"),
          (str(root / "data/regions"), "data/regions"),

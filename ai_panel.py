@@ -7,10 +7,11 @@ import json
 from datetime import datetime
 
 import streamlit as st
+from public_security import generation_slot, PublicSecurityError
 
 from ai_analysis import (
     AIError, PROVIDERS, build_context, check_connection, context_signature, generate_report,
-    requires_thinking, prepare_context, CitationError, compatible_report_signatures,
+    requires_thinking, prepare_context, CitationError, compatible_report_signatures, api_key_widget_key,
 )
 
 
@@ -52,7 +53,7 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
     if preview_only:
         st.caption("使用自己的模型账户，Token 费用由模型平台结算。")
         with st.container(border=True):
-            st.selectbox("模型平台", ["智谱", "DeepSeek"], key="self_preview_provider")
+            st.selectbox("模型平台", [platform["name"] for platform in PROVIDERS.values()], key="self_preview_provider")
             st.text_input("API Key", type="password", disabled=True, placeholder="在实际解读页面填写自己的密钥", key="self_preview_key")
             st.button("生成 AI 解读", disabled=True, key="self_preview_generate")
         st.info("当前为独立界面预览。返回排盘页面后，可使用已有的自备模型解读功能。")
@@ -82,10 +83,13 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
             custom_window = int(st.number_input("模型上下文窗口（Tokens）", min_value=8192, max_value=2000000,
                                                  value=32768, step=1024, key=f"ai_window_{provider}",
                                                  help="按该模型官方文档填写；增大此值不会改变模型实际能力。"))
-            st.caption("自定义模型需支持长上下文、思考模式参数和 JSON 输出；是否可调用以平台权限为准。")
+            st.caption("自定义模型需支持 Chat Completions、足够长的上下文和 JSON 正文；是否可调用以平台权限为准。")
         else:
             model = choice
-        if requires_thinking(provider, model):
+        if provider == "inkstone":
+            thinking = False
+            st.caption("推理方式使用端砚对应模型的默认设置；不发送其他平台的深度思考参数。")
+        elif requires_thinking(provider, model):
             st.toggle("深度思考", value=True, disabled=True, key="ai_required_thinking")
             thinking = True
             st.caption("此模型必须开启思考。报告使用增强推理；连接检查使用轻量推理，等待时间和费用以实际用量为准。")
@@ -94,30 +98,41 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
                                  help="开启后可能需要更长等待时间，并增加按量计费模型的用量。")
         if provider == "zhipu" and model == "glm-4.7-flash":
             st.caption("GLM-4.7-Flash 免费，仍受平台速率及服务可用性限制。")
+        elif provider == "inkstone":
+            st.caption("消耗端砚账户额度；限时免费、墨点价格和周期限额以平台实时页面为准。")
         else:
             st.caption("此选择可能按量计费。点击检查连接或生成前，请在对应平台确认价格、余额和模型权限。")
 
     saved_key = configured_api_key(provider)
     session_keys = st.session_state.setdefault("_ai_keys", {})
     # Keep credentials across provider switches even when Streamlit removes hidden widgets.
-    stored_key = session_keys.get(provider, st.session_state.get("glm_api_key", "") if provider == "zhipu" else "")
+    stored_key = session_keys.get(provider, st.session_state.get(api_key_widget_key(provider), ""))
     with st.expander("模型连接设置", expanded=not bool(saved_key or stored_key)):
         st.markdown(f"在 [{platform['name']}控制台]({platform['console']}) 创建 API Key。不同平台的密钥分别填写。")
         entered_key = st.text_input(f"{platform['name']} API Key", type="password",
-                                    value=stored_key, key="glm_api_key" if provider == "zhipu" else "deepseek_api_key",
+                                    value=stored_key, max_chars=256, key=api_key_widget_key(provider),
                                     help="只保留在当前网页会话中；也可通过项目本地 secrets.toml 配置。")
+        if provider == "inkstone":
+            st.caption("API 地址已设置：https://discovery-api.intern-ai.org.cn/v1；请选择端砚模型列表中的生成模型。")
+            st.markdown(f"[查看端砚使用文档]({platform['docs']})")
         session_keys[provider] = entered_key.strip()
         api_key = entered_key.strip() or saved_key
         if saved_key and not entered_key:
             st.caption("已读取本地 API Key 配置。")
-        if st.button("检查连接", disabled=not bool(api_key and model), key="glm_check_connection"):
+        if st.button("检查密钥与模型" if provider == "inkstone" else "检查连接", disabled=not bool(api_key and model), key="glm_check_connection"):
             try:
-                with st.spinner(f"正在检查 {platform['name']} / {model} 连接……"):
+                with generation_slot("connection"), st.spinner(f"正在检查 {platform['name']} / {model} 连接……"):
                     check_connection(api_key, provider=provider, model=model)
-                st.success(f"{platform['name']} / {model} 连接正常，可以生成解读。")
-            except AIError as error:
+                if provider == "inkstone":
+                    st.success(f"{platform['name']}密钥有效，模型 {model} 在可用列表中。报告生成效果以实际返回为准。")
+                else:
+                    st.success(f"{platform['name']} / {model} 连接正常，可以生成解读。")
+            except (AIError, PublicSecurityError) as error:
                 st.error(str(error))
-        st.caption("连接检查只发送测试短句；GLM-5.3 系列仍会产生必要的思考用量。无需将密钥发到聊天中。")
+        if provider == "inkstone":
+            st.caption("检查只读取可用模型列表，按端砚文档不扣墨点；不发送排盘或古籍内容。无需将密钥发到聊天中。")
+        else:
+            st.caption("连接检查只发送测试短句；GLM-5.3 系列仍会产生必要的思考用量。无需将密钥发到聊天中。")
 
     if not retrieval or not retrieval.get("success"):
         st.info("请先点击‘古籍检索’，再生成解读。")
@@ -262,37 +277,42 @@ def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False,
         st.caption("点击上方‘修正本段并继续’，会先在本地检查保存的岁运草稿；仅编号或外层格式差异且内容完整时直接恢复，不调用模型。仍有实质缺项才请求修正，最多再自动修正一次。已完成阶段不重复请求。")
     st.caption("长报告请求的读取等待上限为 600 秒。生成期间请保持当前页面，避免切换模型、范围或专业细盘时间。")
     if generate_clicked:
-        # A failed new request must not leave an older report looking like the new result.
-        if generate_clicked and st.session_state.get("glm_analysis"):
-            job.clear()
-            job.update(signature=signature)
-        st.session_state.pop("glm_analysis", None)
-        job.pop("last_error", None)
-        generation_progress = st.progress(0, text="正在准备分析……")
         try:
-            with st.spinner("正在分段分析并检查内容，请保留此页面……"):
-                result = generate_report(api_key, context, provider=provider, model=model, thinking=thinking,
-                                         custom_window=custom_window,
-                                         repair_report=failed["report"] if failed else None,
-                                         repair_issues=failed["issues"] if failed else None,
-                                         checkpoint=job, progress=lambda done, total, label: generation_progress.progress(
-                                             done / total, text=f"{done}/{total} · {label}"))
-            st.session_state["glm_analysis"] = {"signature": signature, "result": result}
-            st.session_state.pop("ai_failed_citations", None)
-            st.rerun()
-        except CitationError as error:
-            _remember_failure(job, error, provider=provider, model=model)
-            st.session_state["ai_failed_citations"] = {"signature": signature, "report": error.report,
-                                                       "issues": error.issues, "kind": getattr(error, "kind", "citation")}
-            st.rerun()
-        except AIError as error:
-            _remember_failure(job, error, provider=provider, model=model)
-            pending = job.get("pending_draft")
-            if pending:
-                st.session_state["ai_failed_citations"] = {"signature": signature, **pending}
-            else:
-                st.session_state.pop("ai_failed_citations", None)
-            st.rerun()
+            # Admission precedes clearing old results: a busy site retains the
+            # existing report and completed checkpoint without a model request.
+            with generation_slot("report"):
+                if st.session_state.get("glm_analysis"):
+                    job.clear()
+                    job.update(signature=signature)
+                st.session_state.pop("glm_analysis", None)
+                job.pop("last_error", None)
+                generation_progress = st.progress(0, text="正在准备分析……")
+                try:
+                    with st.spinner("正在分段分析并检查内容，请保留此页面……"):
+                        result = generate_report(api_key, context, provider=provider, model=model, thinking=thinking,
+                                                 custom_window=custom_window,
+                                                 repair_report=failed["report"] if failed else None,
+                                                 repair_issues=failed["issues"] if failed else None,
+                                                 checkpoint=job, progress=lambda done, total, label: generation_progress.progress(
+                                                     done / total, text=f"{done}/{total} · {label}"))
+                    st.session_state["glm_analysis"] = {"signature": signature, "result": result}
+                    st.session_state.pop("ai_failed_citations", None)
+                    st.rerun()
+                except CitationError as error:
+                    _remember_failure(job, error, provider=provider, model=model)
+                    st.session_state["ai_failed_citations"] = {"signature": signature, "report": error.report,
+                                                               "issues": error.issues, "kind": getattr(error, "kind", "citation")}
+                    st.rerun()
+                except AIError as error:
+                    _remember_failure(job, error, provider=provider, model=model)
+                    pending = job.get("pending_draft")
+                    if pending:
+                        st.session_state["ai_failed_citations"] = {"signature": signature, **pending}
+                    else:
+                        st.session_state.pop("ai_failed_citations", None)
+                    st.rerun()
+        except PublicSecurityError as error:
+            st.warning(str(error))
 
     analysis = st.session_state.get("glm_analysis")
     if not analysis:
