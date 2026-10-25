@@ -21,7 +21,7 @@ function size(){
   });
 }
 function reviewKey(review){return JSON.stringify([review.scope,review.id]);}
-function relationMembers(members,stem=false,whole=false){return '<div class="relation-members">'+members.map(n=>'<span>'+esc(n.name)+' '+(whole?glyph(n.stem)+glyph(n.branch):glyph(stem?n.stem:n.branch))+'</span>').join(' <span aria-hidden="true">↔</span> ')+'</div>';}
+function relationMembers(members,stem=false,whole=false,directions=[]){const show=n=>'<span>'+esc(n.name)+' '+(whole?glyph(n.stem)+glyph(n.branch):glyph(stem?n.stem:n.branch))+'</span>';const nodes=Object.fromEntries(members.map(n=>[n.id,n]));const content=directions.length?directions.map(d=>show(nodes[d.from])+' <span aria-hidden="true">→</span> '+show(nodes[d.to])).join('<br>'):members.map(show).join(' <span aria-hidden="true">↔</span> ');return '<div class="relation-members">'+content+'</div>';}
 function relationshipSection(data){
   if(!data)return '';
   const levels=['natal','luck','annual','monthly','daily'],names={luck:'大运',annual:'流年',monthly:'流月',daily:'流日'};
@@ -35,7 +35,7 @@ function relationshipSection(data){
   html+='<div id="relation-panel" role="tabpanel" aria-labelledby="relation-tab-'+esc(relationshipTab)+'">';
   if(active){
     if(!active.events.length)html+='<div class="relation-empty">'+(active.id==='luck'&&!data.nodes.some(n=>n.scope==='luck')?'当前尚未起运或未提供运程资料，无大运干支参与。':active.id!=='natal'&&!data.nodes.some(n=>n.scope===active.id)?'尚未提供当前'+esc(names[active.id])+'。':'当前范围未命中本项目已实现的关系表；不代表不存在其他作用。')+'</div>';
-    else html+='<div class="relation-list">'+active.events.map(r=>'<article class="relation-card"><div class="relation-head"><strong class="relation-title">'+esc(r.label)+'</strong><span class="relation-badge">'+esc(r.stage_note)+'</span></div>'+relationMembers(r.members,r.kind.startsWith('stem_'))+(r.note?'<div class="relation-note">'+esc(r.note)+'</div>':'')+'</article>').join('')+'</div>';
+    else html+='<div class="relation-list">'+active.events.map(r=>'<article class="relation-card"><div class="relation-head"><strong class="relation-title">'+esc(r.label)+'</strong><span class="relation-badge">'+esc(r.stage_note)+'</span></div>'+relationMembers(r.members,r.kind.startsWith('stem_'),false,r.directions||[])+(r.note?'<div class="relation-note">'+esc(r.note)+'</div>':'')+'</article>').join('')+'</div>';
   }else{
     html+='<div class="relation-context">以下记录可核对的条件线索。展开查看：出现同类五行、没有命中冲刑，都不能单独证明成化。</div>';
     if(!data.reviews.length)html+='<div class="relation-empty">当前范围未命中五合、六合或完整三合、三会组合。</div>';

@@ -1,0 +1,14 @@
+{
+  "version": "0.7.0",
+  "files": [
+    {
+      "name": "ziping-shushu-public-v0.7.0.zip",
+      "bytes": 883466,
+      "sha256": "b1b92dadf619bedc370143ee194c13e8507ab6f1a19c7266d7b935eee0e22cbe"
+    }
+  ],
+  "skill_updated": false,
+  "automated_tests_run": false,
+  "model_generation_run": false,
+  "android_version": "0.7.0"
+}

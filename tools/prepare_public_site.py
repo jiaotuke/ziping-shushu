@@ -1,4 +1,4 @@
-"""Prepare an explicit public deployment tree; never include local management."""
+"""Prepare an explicit public application tree."""
 from pathlib import Path
 import argparse
 import shutil
@@ -6,6 +6,8 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = (
     "app.py","public_app.py","public_security.py","ai_panel.py","ai_analysis.py","bazi.py","book_translation.py",
+    "analysis_workflow.py","analysis_workflow_panel.py","period_selection.py","period_text.py",
+    "report_import.py","report_import_panel.py",
     "china_regions.py","citation_audit.py","luck_analysis.py","luck_chart.py","paid_analysis_panel.py",
     "pillar_relationships.py","portable_retrieval.py","professional_chart.py","professional_panel.py",
     "rag.py","referral_common.py","referral_public_panel.py","referral_public_store.py","referral_site_sync.py",
@@ -41,9 +43,16 @@ def prepare(output: Path):
     for name in files:
         target = output / name
         target.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copyfile(ROOT/name,target)
+        if name == "app.py" and output.name != "public-site-v7":
+            content = (ROOT/name).read_text(encoding="utf-8")
+            if "# Refresh changed modules" in content:
+                begin, end = content.index("# Refresh changed modules"), content.index("PORTABLE_MODE =")
+                content = content[:begin]+content[end:]
+            target.write_text(content,encoding="utf-8")
+        else:
+            shutil.copyfile(ROOT/name,target)
     print("公开站点源码已准备：",output)
-    print("未包含本机后台、真实账本、管理员凭据、模型密钥、缓存或签名文件。")
+    print("仅包含应用源码和静态资源；不包含运行数据、密钥或缓存。")
     return tuple(files)
 
 

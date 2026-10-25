@@ -127,7 +127,7 @@ def retrieve_chart(chart: dict) -> dict:
                       "透干" + "、".join(conditions.get("exposed_stems", []))])
     results, modes, errors = {}, {}, {}
     import sys
-    for book in ("穷通宝鉴", "三命通会", "子平真诠", "滴天髓"):
+    for book in ("穷通宝鉴", "三命通会", "子平真诠", "滴天髓", "千里命稿"):
         try:
             found = retrieve(book, chart, topic, 1, get_collection(), sys.modules[__name__])
             results[book], modes[book] = found["results"], found["mode"]

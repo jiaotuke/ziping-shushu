@@ -1,4 +1,4 @@
-"""Operator-only file exchange; imported by the private tool, never a web route.
+"""Operator-only file exchange, never a web route.
 
 The site update is installed through a trusted deployment console/file copy.
 This is not an unauthenticated upload endpoint or a digital signature scheme.
@@ -110,6 +110,10 @@ def apply_publication(store: PublicStore, raw: bytes) -> int:
 def export_leads(store: PublicStore) -> bytes:
     with store.db() as db:
         rows = [dict(r) for r in db.execute("SELECT id,plan_id,ref_code,created_at FROM leads ORDER BY created_at")]
+        details = {r["lead_id"]: json.loads(r["document"]) for r in db.execute("SELECT * FROM lead_details")}
+        for row in rows:
+            if row["id"] in details:
+                row["request_details"] = details[row["id"]]
     return json.dumps({"format":"ziping-public-leads-v1","demo":store.demo,"exported_at":now(),"leads":rows},ensure_ascii=False).encode("utf-8")
 
 

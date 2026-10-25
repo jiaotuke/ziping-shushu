@@ -1,4 +1,4 @@
-"""Customer and agent pages only. No administrator module or ledger import."""
+"""Customer and agent website pages."""
 from __future__ import annotations
 import csv
 from datetime import datetime
@@ -41,11 +41,11 @@ _CHART_INPUT_KEYS = frozenset({
     "lunar_birth_year", "lunar_birth_month", "lunar_birth_day",
     "is_leap_month", "portable_load_location", "use_true_solar_time", "fold_choice",
     "manual_matched_birth", "ai_service_mode", "ai_provider", "ai_thinking",
-    "ai_analysis_scope", "glm_api_key", "deepseek_api_key",
+    "ai_analysis_scope", "glm_api_key", "deepseek_api_key", "inkstone_api_key", "v7_scope",
 })
 _CHART_INPUT_PREFIXES = (
     "manual_select_", "birth_city_", "birth_county_", "paid_pick_",
-    "ai_model_", "ai_custom_", "ai_window_",
+    "ai_model_", "ai_custom_", "ai_window_", "self_v7_pick_", "paid_v7_pick_",
 )
 
 
@@ -66,6 +66,10 @@ def _go(page: str):
         }
     if page == "chart":
         st.session_state["_chart_workspace_restore"] = True
+    else:
+        for flag in list(st.session_state):
+            if flag.startswith(("v7_basis_auto_", "v7_date_auto_")):
+                st.session_state[flag] = False
     st.query_params["page"] = page
     if "preview" in st.query_params:
         del st.query_params["preview"]
@@ -125,10 +129,15 @@ def render_navigation() -> str:
 
 
 
-def render_consultation_ticket(plan_id: str, *, key: str, enabled: bool = True, preview_only: bool = False):
+def render_consultation_ticket(plan_id: str, *, key: str, enabled: bool = True, preview_only: bool = False,
+                               details=None, button_label="生成咨询编号", compact=False):
     """Create a source-bound ticket only on an explicit customer action."""
     if preview_only:
-        st.caption("排盘后的付费解读区域可以生成咨询编号，方便微信联系与推广来源核对。")
+        if compact:
+            st.button(button_label, key="consult_preview_"+key+"_"+plan_id, disabled=True, width="stretch")
+            st.caption("当前为界面预览，返回排盘页面后可登记咨询。")
+        else:
+            st.caption("排盘后的付费解读区域可以生成咨询编号，方便微信联系与推广来源核对。")
         return
     demo = _demo()
     if demo:
@@ -140,24 +149,43 @@ def render_consultation_ticket(plan_id: str, *, key: str, enabled: bool = True, 
         st.caption(f"推荐来源：{source['display_name']} · {source['code']}。本次咨询会保留这一来源。")
     elif st.query_params.get("ref") and not ref_code:
         st.info("链接中的推广码未找到有效代理；当前按直接咨询登记。如需核对推荐人，请先联系作者。")
-    cache_key = f"ref_ticket_{_mode()}_{key}_{plan_id}_{ref_code}"
+    import hashlib
+    import json
+    detail_key = hashlib.sha256(json.dumps(details or {}, sort_keys=True).encode()).hexdigest()[:16]
+    cache_key = f"ref_ticket_{_mode()}_{key}_{plan_id}_{ref_code}_{detail_key}"
     nonce_key = cache_key + "_request"
     if nonce_key not in st.session_state:
         st.session_state[nonce_key] = secrets.token_urlsafe(24)
     ticket = st.session_state.get(cache_key)
-    if not ticket and st.button("生成咨询编号", key=cache_key+"_create", type="primary",
+    if not ticket and st.button(button_label, key=cache_key+"_create", type="primary",
                                 disabled=not enabled, use_container_width=True):
         try:
-            ticket = store.create_lead(st.session_state[nonce_key], plan_id, ref_code)
+            ticket = store.create_lead(st.session_state[nonce_key], plan_id, ref_code, details=details)
             st.session_state[cache_key] = ticket
         except ReferralError as error:
             st.error(str(error))
     if ticket:
+        if compact:
+            st.success("咨询已登记")
+            registered_at = datetime.fromisoformat(ticket["created_at"]).astimezone(
+                ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
+            lines = ["子平术数咨询登记", "咨询编号：" + ticket["id"],
+                     "解读范围：" + PLAN_NAMES[ticket["plan_id"]], "登记时间：" + registered_at]
+            if details and details.get("scope"):
+                lines.append("详细范围：" + details["scope"])
+            elif details and details.get("date"):
+                lines.append("所选流日：" + details["date"])
+            st.code("\n".join(lines), language=None)
+            st.caption("请点击右上角复制登记信息，作为添加好友备注或咨询说明，通过上方私人微信联系作者。")
+            return ticket
         with st.container(border=True):
             st.code(f"子平术数咨询｜{ticket['id']}｜{PLAN_NAMES[plan_id]}", language=None)
+            if details:
+                st.write("指定日期：" + str(details.get("date", "—")) + "；基础咨询：" + str(details.get("parent_id", "—")))
             st.caption("复制上面这行作为添加好友备注。作者凭咨询编号核对你的需求及推荐来源。")
             st.caption("咨询已登记，尚未确认成交。生成报告、费用和交付安排通过微信沟通。")
             st.write("微信号：**" + WECHAT_ID + "**")
+    return ticket
 
 
 
@@ -222,10 +250,10 @@ def render_agent_center():
     store = _store(_demo())
     token_key = "public_agent_token_"+_mode()
     if _demo():
-        st.info("演示代理查询 · 尚无咨询或成交；等级由独立本机后台发布。")
+        st.info("演示代理查询 · 尚无咨询或成交；等级由作者核定。")
         choices = store.demo_agents()
         if not choices:
-            st.info("尚未收到演示代理资料，请由本机管理工具发布。")
+            st.info("尚未收到演示代理资料，请联系作者核对。")
             return
         by_code = {a["code"]:a for a in choices}
         code = st.selectbox("体验代理身份",list(by_code),format_func=lambda v:by_code[v]["display_name"]+" · "+v)
@@ -305,7 +333,7 @@ def render_agent_center():
         data = store.dashboard(token)
         agent,view = data["agent"],data["view"]
         st.markdown(f"### {agent['grade']} 级代理 · {GRADE_RATES[agent['grade']]/100:g}%")
-        st.caption("等级由作者核定；返佣以本机后台登记时锁定的等级及实际净收款计算。")
+        st.caption("等级由作者核定；返佣以咨询登记时锁定的等级及实际净收款计算。")
         ids = {r["id"] for r in view["orders"]}|{r["id"] for r in data["leads"]}
         columns = st.columns(4)
         for col,label,value in zip(columns,("带来咨询","确认成交","待结算佣金","已结算佣金"),

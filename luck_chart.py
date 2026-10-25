@@ -196,6 +196,10 @@ def summary_html(document, title):
 
 def results_html(report):
     """Static full overview, also used for complete text/print exports."""
+    if report.get("kind") == "period-only":
+        labels = {"annual": "流年专项分析", "monthly": "流月专项分析", "daily": "流日专项分析"}
+        return ''.join(summary_html(item, labels[item['id']]) + _paragraph(json_selected(item['selected']))
+                       for item in report['periods'])
     life = report.get('luck_analysis')
     if not life:
         return summary_html(report, '原局概览')
@@ -212,6 +216,11 @@ def results_html(report):
 
 
 def reasoning_html(report, sources):
+    if report.get("kind") == "period-only":
+        labels = {"annual": "流年", "monthly": "流月", "daily": "流日"}
+        return ('<section>' + ''.join('<h2>'+labels[item['id']]+'具体分析与依据</h2>' + detail_html(item, sources)
+                                     for item in report['periods'])
+                + '<h3>待核条件与局限</h3>' + _list(report.get('limitations', [])) + '</section>')
     from ai_analysis import STEP_TITLES
     out = ['<section><h2>原局判断与推导依据</h2>', _paragraph(report['summary'])]
     for step in report['steps']:
@@ -265,6 +274,9 @@ def render_extended(report, sources, *, key='life_report'):
     from pathlib import Path
     import streamlit as st
     import streamlit.components.v1 as components
+    if report.get("kind") == "period-only":
+        st.html(extended_html(report, sources))
+        return
     # Reload the changed frontend without discarding the report or model checkpoints.
     dashboard = components.declare_component('ziping_life_report_' + DASHBOARD_UI_VERSION, path=str(Path(__file__).parent / 'components/life_report'))
     dashboard(payload=dashboard_payload(report), key=key + '_' + DASHBOARD_UI_VERSION, default=None)

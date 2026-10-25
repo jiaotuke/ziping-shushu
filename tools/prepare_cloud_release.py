@@ -31,7 +31,7 @@ def build():
     checksums = {name: hashlib.sha256((release / name).read_bytes()).hexdigest() for name in sorted(files)}
     manifest = {
         "format": "ziping-public-release-v1", "release": release.name,
-        "contains_private_ledger": False, "contains_demo_data": False,
+        "contains_runtime_data": False, "contains_demo_data": False,
         "contains_model_keys": False, "sha256": checksums,
         "status": "source-prepared-not-deployed-or-runtime-tested",
     }

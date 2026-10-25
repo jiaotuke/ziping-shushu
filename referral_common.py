@@ -1,4 +1,4 @@
-"""Public protocol and pricing. No access to the administrator ledger."""
+"""Public consultation protocol and pricing."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -10,12 +10,42 @@ import re
 import secrets
 
 WECHAT_ID = "bxzgf-bxbgf"
+NATAL_PRICE = "18.88"
+LUCK_PRICE = "36.88"
+PERIOD_FEE = "2"
 PLANS = (
-    {"id": "natal", "title": "原局解读", "price": "8.88", "description": "原局八步分析，结合古籍梳理旺衰、格局与取用。"},
-    {"id": "annual", "title": "大运流年", "price": "28.88", "description": "原局、前六步大运详解与评分K线，再详解选定流年。"},
-    {"id": "daily", "title": "运年月日详解", "price": "36.88", "description": "原局、前六步大运与评分K线，再详解选定流年、流月、流日。"},
+    {"id": "natal_v7", "title": "原局解读", "price": NATAL_PRICE, "description": "原局八步解读，分别说明事业学业、财富资源、感情合作，并附推导依据。"},
+    {"id": "luck_v7", "title": "原局＋大运", "price": LUCK_PRICE, "description": "原局、前六步大运及流年趋势，包含逐年评分与子平K线。"},
+    {"id": "date_v7", "title": "原局＋大运＋指定年月日详解", "price": f"{LUCK_PRICE}＋年/月/日各{PERIOD_FEE}元/次", "description": "基础报告上按需追加：仅分析年、仅分析月或仅分析日，每项2元/次，可反复选择。"},
 )
-PLAN_NAMES = {p["id"]: p["title"] for p in PLANS}
+PLAN_NAMES = {"natal": "原局解读（旧版）", "annual": "大运流年（旧版）", "daily": "运年月日详解（旧版）",
+              **{p["id"]: p["title"] for p in PLANS}, "date_addon_v7": "大运年月日追加详解"}
+
+
+def consultation_details(value=None):
+    """Keep the chosen period and optional private reference; never payment fields."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or set(value)-{"date", "parent_id", "scope"}:
+        raise ReferralError("咨询补充信息不正确。")
+    result = {}
+    if value.get("date"):
+        from datetime import date
+        try:
+            result["date"] = date.fromisoformat(value["date"]).isoformat()
+        except (TypeError, ValueError):
+            raise ReferralError("指定日期不正确。") from None
+    if value.get("parent_id"):
+        parent = str(value["parent_id"]).strip().upper()
+        if not re.fullmatch(r"ZP[A-F0-9]{12}", parent):
+            raise ReferralError("请填写原局大运基础咨询编号（ZP开头）。")
+        result["parent_id"] = parent
+    if value.get("scope"):
+        scope = value["scope"]
+        if not isinstance(scope, str) or not 1 <= len(scope) <= 240 or any(ord(char) < 32 for char in scope):
+            raise ReferralError("解读范围不正确，请重新选择大运与年月日。")
+        result["scope"] = scope
+    return result
 GRADE_RATES = {"C": 2000, "B": 3000, "A": 4000}
 B_THRESHOLD = 50000
 A_REVIEW_THRESHOLD = 300000

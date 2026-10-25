@@ -6,15 +6,8 @@
       "name": "ziping-shushu-skill-v0.6.0.zip",
       "bytes": 719300,
       "sha256": "ec15a6af305a4f4dd26d619c528366d210ceda50a08afa10d11190bfdb2c249b"
-    },
-    {
-      "name": "ziping-shushu-public-v0.6.0.zip",
-      "bytes": 853935,
-      "sha256": "8dc784a639069274ed0ccb53407b1822e1c106c31dd4c1581663eecf34e00eba"
     }
   ],
-  "includes_private_management": false,
-  "includes_business_data": false,
   "includes_credentials": false,
   "checks": [
     "static-syntax",

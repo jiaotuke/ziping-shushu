@@ -13,12 +13,13 @@ from itertools import combinations
 
 from lunar_python.util import LunarUtil
 
-RULE_VERSION = "positions-and-evidence-2-month-day"
+RULE_VERSION = "positions-and-evidence-3-directed-and-hidden"
 NATAL_NAMES = ("年柱", "月柱", "日柱", "时柱")
 SCOPE_NAMES = {"natal": "原局", "luck": "大运", "annual": "流年", "monthly": "流月", "daily": "流日"}
 SCOPE_LEVELS = {scope: index for index, scope in enumerate(SCOPE_NAMES)}
 STEM_ELEMENTS = dict(zip("甲乙丙丁戊己庚辛壬癸", "木木火火土土金金水水"))
 CONTROLS = dict(zip("木火土金水", "土金水木火"))
+GENERATES = dict(zip("木火土金水", "火土金水木"))
 STEM_COMBINATIONS = (("甲己", "土"), ("乙庚", "金"), ("丙辛", "水"), ("丁壬", "木"), ("戊癸", "火"))
 BRANCH_COMBINATIONS = (("子丑", "土"), ("寅亥", "木"), ("卯戌", "火"), ("辰酉", "金"), ("巳申", "水"), ("午未", ""))
 HARMONIES = (("申子辰", "水"), ("亥卯未", "木"), ("寅午戌", "火"), ("巳酉丑", "金"))
@@ -28,6 +29,10 @@ BRANCH_CLASHES = ("子午", "丑未", "寅申", "卯酉", "辰戌", "巳亥")
 HARMS = ("子未", "丑午", "寅巳", "卯辰", "申亥", "酉戌")
 BREAKS = ("子酉", "丑辰", "寅亥", "卯午", "巳申", "未戌")
 PUNISHMENT_GROUPS = ("寅巳申", "丑戌未")
+PUNISHMENT_DIRECTIONS = ("寅巳", "巳申", "申寅", "丑戌", "戌未", "未丑", "子卯", "卯子")
+# Rule data follows china-testing/bazi ganzhi.py zhi_atts['暗']; no upstream implementation copied.
+HIDDEN_COMBINATIONS = ("寅丑", "卯申", "午亥")
+RULE_SOURCE = "https://github.com/china-testing/bazi/blob/master/ganzhi.py"
 TRANSFORM_TYPES = {"stem_combination", "branch_combination", "three_harmony", "three_meeting"}
 DISRUPTION_TYPES = {"stem_clash", "branch_clash", "punishment_pair", "self_punishment", "harm", "break"}
 
@@ -39,13 +44,14 @@ def _node(key: str, name: str, pillar: str, scope: str, order: int) -> dict:
             "branch": pillar[1], "scope": scope, "order": order}
 
 
-def _event(kind: str, label: str, members: tuple, *, element: str = "", note: str = "", group: str = "") -> dict:
+def _event(kind: str, label: str, members: tuple, *, element: str = "", note: str = "", group: str = "", directions=()) -> dict:
     identifiers = ":".join(n["id"] for n in members)
     scopes = {n["scope"] for n in members}
     scope = max(scopes, key=SCOPE_LEVELS.__getitem__)
     return {"id": f"{kind}:{identifiers}", "kind": kind, "label": label,
             "scope": scope, "members": list(members), "element": element,
-            "note": note, "group": group}
+            "note": note, "group": group,
+            **({"directions": [{"from": a["id"], "to": b["id"]} for a, b in directions]} if directions else {})}
 
 
 def _matches(a: str, b: str, rules) -> str | None:
@@ -57,6 +63,12 @@ def _pair_events(left: dict, right: dict) -> list[dict]:
     stems = frozenset((left["stem"], right["stem"]))
     branches = frozenset((left["branch"], right["branch"]))
     events = []
+    for source, target in ((left, right), (right, left)):
+        a, b = STEM_ELEMENTS[source["stem"]], STEM_ELEMENTS[target["stem"]]
+        for kind, table, verb in (("stem_generate", GENERATES, "生"), ("stem_control", CONTROLS, "克")):
+            if table[a] == b:
+                events.append(_event(kind, source["stem"]+verb+target["stem"], members,
+                    directions=((source, target),), note="按天干五行记录施受方向，不代表作用已落实、力量大小或必然吉凶；与合冲并列保留。"))
     for pair, element in STEM_COMBINATIONS:
         if stems == frozenset(pair):
             events.append(_event("stem_combination", pair + "合", members, element=element,
@@ -71,15 +83,19 @@ def _pair_events(left: dict, right: dict) -> list[dict]:
     for kind, suffix, table in (("branch_clash", "冲", BRANCH_CLASHES), ("harm", "害", HARMS), ("break", "破", BREAKS)):
         if pair := _matches(left["branch"], right["branch"], table):
             events.append(_event(kind, pair + suffix, members))
+    directions = tuple((a, b) for a, b in ((left, right), (right, left))
+                       if a["branch"]+b["branch"] in PUNISHMENT_DIRECTIONS)
     if branches == frozenset("子卯"):
-        events.append(_event("punishment_pair", "子卯刑", members))
+        events.append(_event("punishment_pair", "子卯互刑", members, directions=directions,
+                             note="子刑卯、卯刑子分别保留方向；配对不等于具体灾事。"))
     for group in PUNISHMENT_GROUPS:
         if len(branches) == 2 and branches <= set(group):
-            pair = "".join(branch for branch in group if branch in branches)
-            events.append(_event("punishment_pair", pair + "刑（两支）", members, group=group,
+            source, target = directions[0]
+            label = source["branch"]+"刑"+target["branch"]
+            events.append(_event("punishment_pair", label + "（两支）", members, group=group, directions=directions,
                                  note="标记三刑组内的两支相刑；完整三刑另列，不以此删除其他刑。"))
     if left["branch"] == right["branch"] and left["branch"] in "辰午酉亥":
-        events.append(_event("self_punishment", left["branch"] * 2 + "自刑", members,
+        events.append(_event("self_punishment", left["branch"] * 2 + "自刑", members, directions=((left,right),(right,left)),
                              note="必须是两个不同柱位出现相同支；单独一支不计自刑。"))
     for group, element in HARMONIES:
         if len(branches) != 2 or not branches <= set(group):
@@ -91,6 +107,20 @@ def _pair_events(left: dict, right: dict) -> list[dict]:
         else:
             events.append(_event("arched_harmony", pair + "拱合配对", members, element=element, group=group,
                                  note=f"两端支配对，中神为{group[1]}；不作为标准半合或完整三合。"))
+    for group, element in MEETINGS:
+        if len(branches) == 2 and branches <= set(group):
+            pair = "".join(branch for branch in group if branch in branches)
+            arched = group[1] not in branches
+            missing = "".join(branch for branch in group if branch not in branches)
+            events.append(_event("half_meeting", pair + ("半会（拱会）" if arched else "半会"), members,
+                element=element, group=group,
+                note=f"采用china-testing/bazi的会方两支配对口径；缺{missing}，只作未齐候选，不按完整三会或固定比例折算力量。"))
+    if pair := _matches(left["branch"], right["branch"], HIDDEN_COMBINATIONS):
+        hidden_pairs = [a+b for a in LunarUtil.ZHI_HIDE_GAN[left["branch"]] for b in LunarUtil.ZHI_HIDE_GAN[right["branch"]]
+                        if any(frozenset(a+b) == frozenset(p) for p, _ in STEM_COMBINATIONS)]
+        events.append(_event("hidden_combination", pair+"暗合配对", members,
+            note="采用china-testing/bazi的寅丑、卯申、午亥口径；藏干五合线索："+"、".join(hidden_pairs)
+                 +"。仅作候选，不等同六合或成化，不直接指认婚恋、隐情等现实事件。"))
     return events
 
 
@@ -219,8 +249,8 @@ def analyze_relationships(pillars: dict, *, luck_pillar: str | None = None, annu
     for event in events:
         event["stage_note"] = _stage_note(event, nodes)
         active = [n for n in nodes if scopes[n["scope"]] <= scopes[event["scope"]]]
-        if event["kind"] in {"half_harmony", "arched_harmony"} and set(event["group"]) <= {n["branch"] for n in active}:
-            event["note"] += " 当前范围该组三支已齐，完整三合另列；两支与三支记录不累加折算力量。"
+        if event["kind"] in {"half_harmony", "arched_harmony", "half_meeting"} and set(event["group"]) <= {n["branch"] for n in active}:
+            event["note"] += " 当前范围该组三支已齐，完整组合另列；两支与三支记录不累加折算力量。"
     # Review each relation against its own scope; later transit evidence is separate.
     reviews = []
     for event in events:
@@ -256,10 +286,15 @@ def relationship_facts(analysis: dict) -> dict:
         "柱位": [{"id": n["id"], "名称": n["name"], "干支": n["pillar"], "范围": n["scope"]} for n in analysis["nodes"]],
         "关系": [{"id": r["id"], "类型": r["kind"], "关系": r["label"], "范围": r["scope"],
                   "参与位置": [n["id"] for n in r["members"]], "标记": r["stage_note"],
+                  **({"作用方向": [{"施方": d["from"], "受方": d["to"]} for d in r["directions"]]} if r.get("directions") else {}),
                   **({"候选五行": r["element"], "合化结论": "未判定"} if r["kind"] in TRANSFORM_TYPES else {}),
+                  **({"候选五行": r["element"], "组合结论": "未判定", "规则来源": RULE_SOURCE,
+                      "规则说明": r["note"]} if r["kind"] in {"half_meeting", "hidden_combination"} else {}),
                   **({"所属支组": r["group"]} if r["group"] else {})}
                  for group in analysis["groups"] for r in group["events"]],
         "使用约束": [analysis["summary"], "原局月令不被大运、流年、流月、流日替换；流月只提供当前节月线索。",
                      "半合须含中神；拱合、半合、完整三合不累加折算力量。午未六合未统一化神。",
+                     "半会/拱会与暗合仅为所选口径的候选配对，不按完整合会判定；暗合不直接对应婚外情或其他具体事件。",
+                     "天干生克与刑须按作用方向读取，存在关系不等于实际生克制化成立，不按条数累加吉凶。",
                      "得令、根气与透干、旺衰、隔位及争合、合冲解救均须结合原文复核；不得见合即化或改写干支十神。"],
     }

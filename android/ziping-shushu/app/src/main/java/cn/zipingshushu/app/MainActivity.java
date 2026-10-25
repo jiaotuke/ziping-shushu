@@ -50,7 +50,7 @@ public class MainActivity extends Activity {
         setContentView(web);
         executor.execute(() -> {
             try {
-                File data = new File(getFilesDir(), "core-data-v2");
+                File data = new File(getFilesDir(), "core-data-v7");
                 copyAssets("core-data", data);
                 if (!Python.isStarted()) Python.start(new AndroidPlatform(this));
                 runtime = Python.getInstance().getModule("mobile_runtime");
@@ -92,7 +92,7 @@ public class MainActivity extends Activity {
 
     private class Bridge {
         @JavascriptInterface public void call(String id, String method, String payload) {
-            if (!id.matches("[0-9]{1,12}") || payload.length() > 50000) return;
+            if (!id.matches("[0-9]{1,12}") || payload.length() > (method.equals("import") ? 2750000 : 50000)) return;
             executor.execute(() -> {
                 String output;
                 try { output = runtime.callAttr("dispatch", method, payload, new Progress()).toString(); }
@@ -109,7 +109,10 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface public void save(String filename, String encoded, String mime) {
-            if (encoded.length() > 8000000 || !filename.matches("子平术数-解读报告\\.(html|txt|json)")) return;
+            if (encoded.length() > 8000000 || filename.length() > 170
+                || !filename.matches("子平术数-[\\p{IsHan}0-9—·_(). -]+\\.(html|txt|json)")) return;
+            String expected = filename.endsWith(".html") ? "text/html" : filename.endsWith(".txt") ? "text/plain" : "application/json";
+            if (!mime.equals(expected)) return;
             byte[] bytes;
             try { bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT); }
             catch (Exception ignored) { return; }
@@ -122,6 +125,17 @@ public class MainActivity extends Activity {
                 intent.putExtra(Intent.EXTRA_TITLE, filename);
                 try { startActivityForResult(intent, 201); }
                 catch (Exception ignored) { pendingExport = null; }
+            });
+        }
+
+        @JavascriptInterface public void openReport() {
+            runOnUiThread(() -> {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("*/*");
+                intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"text/html", "text/plain", "application/json", "application/octet-stream"});
+                try { startActivityForResult(intent, 202); }
+                catch (Exception ignored) { web.evaluateJavascript("window.nativeReportError('无法打开文件选择器。')", null); }
             });
         }
     }
@@ -149,6 +163,38 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (request == 202 && result == RESULT_OK && data != null && data.getData() != null) {
+            final Uri uri = data.getData();
+            executor.execute(() -> {
+                try {
+                    String filename = "";
+                    try (android.database.Cursor cursor = getContentResolver().query(uri,
+                        new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                        if (cursor != null && cursor.moveToFirst()) filename = cursor.getString(0);
+                    }
+                    if (filename == null || !filename.toLowerCase(java.util.Locale.ROOT).matches(".*\\.(json|html|htm|txt)")) throw new java.io.IOException();
+                    java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                    try (InputStream input = getContentResolver().openInputStream(uri)) {
+                        if (input == null) throw new java.io.IOException();
+                        byte[] buffer = new byte[8192]; int n;
+                        while ((n = input.read(buffer)) != -1) {
+                            if (bytes.size() + n > 2000000) throw new java.io.IOException();
+                            bytes.write(buffer, 0, n);
+                        }
+                    }
+                    if (bytes.size() == 0) throw new java.io.IOException();
+                    String encoded = android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP);
+                    for (int offset = 0; offset < encoded.length(); offset += 16000) {
+                        int end = Math.min(offset + 16000, encoded.length());
+                        String script = "window.receiveImportChunk(" + JSONObject.quote(filename) + ","
+                            + JSONObject.quote(encoded.substring(offset, end)) + "," + (end == encoded.length()) + ")";
+                        runOnUiThread(() -> { if (!isFinishing() && !isDestroyed()) web.evaluateJavascript(script, null); });
+                    }
+                } catch (Exception ignored) {
+                    runOnUiThread(() -> web.evaluateJavascript("window.nativeReportError('请选择不超过2MB的完整JSON、HTML或TXT报告。')", null));
+                }
+            });
+        }
         if (request == 201) {
             byte[] bytes = pendingExport;
             pendingExport = null;

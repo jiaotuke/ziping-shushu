@@ -233,14 +233,15 @@ def permit_ui_action(action: str) -> bool:
 
 
 @contextmanager
-def generation_slot(purpose: str):
+def generation_slot(purpose: str, *, rate_action: bool = True):
     if not enabled():
         yield
         return
     gate=controls()
     identifier=gate.acquire(purpose)
     try:
-        gate.rate(purpose)
+        if rate_action:
+            gate.rate(purpose)
     except BaseException:
         with gate.db() as db:
             db.execute('DELETE FROM leases WHERE id=?',(identifier,))

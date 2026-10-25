@@ -71,6 +71,10 @@ STEP_TITLES = (
     "格局成败与救应", "取用与喜忌", "岁运分析范围与基线", "结论与待核条件",
 )
 NO_LUCK_DATA = "本次按原局解读，未纳入大运、起运年龄及流年作用资料，暂不推断大运流年。"
+RELATION_REALITY_INSTRUCTIONS = """关系对应现实情况须按以下顺序：先复制程序的参与柱位、范围与作用方向，再核对日主十神、原局格局喜忌、根气透藏与合冲制化条件，然后分别提出事业学业、财务资源、感情合作领域的可能场景、成立条件和反证。没有依据时说明无法落实到具体事件。
+生克只是有方向的五行关系，不等于作用已经成立或生必吉、克必凶；刑按程序施受方解释，不把单向刑反写成双向。
+半会、拱会和暗合只作为所选口径的候选关系，不冒充完整合会或成化，不叠加计算同组力量。不要从暗合直接推断婚外情、秘密关系，从冲直接推断失业或离婚，从刑害直接推断疾病、事故或官非。
+不得把柱位当作固定年龄段或必然事件，也不得因十神就认定某个现实人物；需结合已提供性别、出生资料和实际身份，缺少身份时分别给在校、工作或合作等条件性场景。引用证明摘录存在，不证明解释正确；无引用的推演明确属于模型判断。"""
 
 
 class AIError(ValueError):
@@ -140,7 +144,7 @@ def prepare_context(context: dict, *, provider: str = "zhipu", model: str = MODE
             source["source_id"] = f"S{index:03d}"
     removed = []
     while True:
-        prepared["missing_support_books"] = [name for name in ("穷通宝鉴", "三命通会", "滴天髓")
+        prepared["missing_support_books"] = [name for name in ("穷通宝鉴", "三命通会", "滴天髓", "千里命稿")
                                              if not any(s["book_name"] == name for s in prepared["sources"])]
         budget = message_budget(build_messages(prepared), provider=provider, model=model,
                                 thinking=thinking, custom_window=custom_window)
@@ -293,7 +297,7 @@ def _validated_transit(transit: dict, pillars: dict) -> dict:
         if "流月" in transit or "流日" in transit:
             from professional_chart import flow_days, flow_months
 
-            month, day = transit["流月"], transit["流日"]
+            month = transit["流月"]
             index = month["月序"]
             if type(index) is not int or not 0 <= index < 12:
                 raise ValueError
@@ -301,12 +305,14 @@ def _validated_transit(transit: dict, pillars: dict) -> dict:
             for key, expected in (("干支", "pillar"), ("起始时刻", "start"), ("结束时刻", "end")):
                 if month[key] != expected_month[expected]:
                     raise ValueError
-            expected_day = next((d for d in flow_days(annual["年份"], index, pillars["日柱"][0]) if d["id"] == day["日期"]), None)
-            if expected_day is None or day["干支"] != expected_day["pillar"]:
-                raise ValueError
             result["流月"] = {"月序": index, "名称": expected_month["label"], "干支": expected_month["pillar"],
                               "起始时刻": expected_month["start"], "结束时刻": expected_month["end"]}
-            result["流日"] = {"日期": expected_day["id"], "干支": expected_day["pillar"]}
+            if "流日" in transit:
+                day = transit["流日"]
+                expected_day = next((d for d in flow_days(annual["年份"], index, pillars["日柱"][0]) if d["id"] == day["日期"]), None)
+                if expected_day is None or day["干支"] != expected_day["pillar"]:
+                    raise ValueError
+                result["流日"] = {"日期": expected_day["id"], "干支": expected_day["pillar"]}
             result["节月口径"] = "按节气时刻切换；交节日可能同时出现在相邻节月，以所选节月区间为准。流日沿用Exact2换日口径。"
         return result
     except (ValueError, KeyError, TypeError):
@@ -325,7 +331,7 @@ def build_context(chart: dict, retrieval: dict, records: list[dict] | None = Non
     selected_ids = {r["source_id"] for r in selected}
     by_id = {r["source_id"]: r for r in records}
     missing = []
-    for book in ("穷通宝鉴", "三命通会", "滴天髓"):
+    for book in ("穷通宝鉴", "三命通会", "滴天髓", "千里命稿"):
         budget = 6000
         added = 0
         for result in retrieval.get("results_by_book", {}).get(book, []):
@@ -344,7 +350,8 @@ def build_context(chart: dict, retrieval: dict, records: list[dict] | None = Non
                 added += 1
         if not added:
             missing.append(book)
-    facts = {key: chart[key] for key in ("四柱", "四柱详情", "检索条件", "日柱换日规则", "时间说明") if key in chart}
+    facts = {key: chart[key] for key in ("四柱", "四柱详情", "检索条件", "日柱换日规则", "时间说明",
+                                      "性别", "公历", "专业出生时刻") if key in chart}
     if set(facts.get("四柱", {})) != {"年柱", "月柱", "日柱", "时柱"}:
         raise AIError("四柱资料不完整，请重新排盘。")
     relationship_args = {}
@@ -355,10 +362,21 @@ def build_context(chart: dict, retrieval: dict, records: list[dict] | None = Non
                              "luck_label": f"大运{period['大运']['起始年']}—{period['大运']['结束年']}",
                              "annual_label": f"流年{period['流年']['年份']}"}
         if "流月" in period:
-            relationship_args.update({"monthly_pillar": period["流月"]["干支"], "daily_pillar": period["流日"]["干支"],
-                                      "monthly_label": f"流月{period['流月']['名称']}（{period['流月']['起始时刻']}起）",
-                                      "daily_label": f"流日{period['流日']['日期']}"})
+            relationship_args.update({"monthly_pillar": period["流月"]["干支"],
+                                      "monthly_label": f"流月{period['流月']['名称']}（{period['流月']['起始时刻']}起）"})
+        if "流日" in period:
+            relationship_args.update({"daily_pillar": period["流日"]["干支"], "daily_label": f"流日{period['流日']['日期']}"})
     facts["干支关系"] = relationship_facts(analyze_relationships(facts["四柱"], **relationship_args))
+    # Retrieve the new book independently of any stale page-tab results.
+    from book_retrievers.qianli_minggao import select_relationships, RETRIEVAL_VERSION, corpus_signature
+    try:
+        qianli, _ = select_relationships([('原局',facts['干支关系']['关系'])],max_characters=6000)
+    except (ValueError, OSError) as error:
+        raise AIError("《千里命稿》原局关系检索失败，请核对本地底本。") from error
+    selected = [r for r in selected if r['book_name'] != '千里命稿'] + qianli
+    missing = [name for name in missing if name != '千里命稿']
+    if not qianli:
+        missing.append('千里命稿')
     sources = [{
         "source_id": r["source_id"], "book_name": r["book_name"], "chapter": r["section"],
         "line_number": f"{r['line_number']}-{r.get('end_line_number', r['line_number'])}",
@@ -369,6 +387,8 @@ def build_context(chart: dict, retrieval: dict, records: list[dict] | None = Non
         "method_book": "子平真诠全文，含底本所附评注；原文与评注尚未完全分离",
         "missing_support_books": missing,
         "missing_data": [] if transit is not None else ["大运干支", "起运年龄", "流年作用计算"],
+        "qianli_retrieval_version": RETRIEVAL_VERSION,
+        "qianli_corpus_signature": corpus_signature(),
     }
     if transit is not None:
         from luck_analysis import build_luck_plan
@@ -407,7 +427,7 @@ JSON额外包含relation_implications数组：对facts.干支关系中范围为n
     if context["facts"].get("当前岁运"):
         system += "\n本次将逐段生成全部正式大运的详细分析与评分。第7步先建立岁运评价基线，说明判好坏的原局依据和反证，并解释当前所选运年，至少引用一条适用原文；完整逐运报告随后单独生成，不在这里用一句话代替。各层的合、冲并列保留，不自动认定合解冲或冲开库。可以解释作用关系可能涉及的现实领域、场景与条件，不写成保证发生的事实，不编造其他未提供的时间。"
         if "流月" in context["facts"]["当前岁运"]:
-            system += "\n本次已提供选定流月与流日，必须核对具体节月区间和公历日期，区分流月新增与流日新增；不得把交节日整天套用为同一节月，亦不得将短期作用延伸成全年结论。"
+            system += "\n本次提供选定流月；仅在资料包含流日时才解释具体日期。必须核对节月区间，区分流月与流日新增作用；不得把交节日整天套用为同一节月，亦不得将短期作用延伸成全年结论。"
         else:
             system += "\n本次没有选择流月、流日范围，不推断具体月份或日期。"
     else:
@@ -439,7 +459,8 @@ def _build_messages_v4(context: dict) -> list[dict]:
 def build_messages(context: dict) -> list[dict]:
     from report_presentation import PRESENTATION_INSTRUCTIONS, presentation_schema
     messages = _build_messages_v4(context)
-    messages[0]["content"] += "\n" + PRESENTATION_INSTRUCTIONS
+    messages[0]["content"] += "\n" + PRESENTATION_INSTRUCTIONS + "\n" + RELATION_REALITY_INSTRUCTIONS
+    messages[0]["content"] += "\n《千里命稿》是韦千里的近代命理文献，术语和取法可能与其他书不同。篇章或干支字面命中仅为检索线索，须核对原文中的位置、喜忌、强弱与救应条件；原书命例的人生经历不是用户经历。没有本书对应条文就说明未找到，不用其他关系的通则冒充直接依据。"
     wire = json.loads(messages[1]["content"])
     wire["additional_output_fields"] = presentation_schema()
     messages[1]["content"] = json.dumps(wire, ensure_ascii=False, separators=(",", ":"))

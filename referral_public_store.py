@@ -1,4 +1,4 @@
-"""Public leads and agent login/read views. No access to the private ledger."""
+"""Public consultations and agent login/query views."""
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -12,7 +12,7 @@ import secrets
 import sqlite3
 
 from runtime_paths import DATA_ROOT
-from referral_common import ReferralError, PLAN_NAMES, GRADE_RATES, now, identifier, username, password_hash, password_matches
+from referral_common import ReferralError, PLAN_NAMES, GRADE_RATES, now, identifier, username, password_hash, password_matches, consultation_details
 
 
 class PublicStore:
@@ -36,6 +36,7 @@ class PublicStore:
                     plan_id TEXT NOT NULL,ref_code TEXT NOT NULL,created_at TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS published_views (code TEXT PRIMARY KEY,document TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS lead_details (lead_id TEXT PRIMARY KEY,document TEXT NOT NULL);
             """)
         os.chmod(self.path, 0o600)
 
@@ -67,13 +68,23 @@ class PublicStore:
         from public_security import controls
         return controls()
 
-    def create_lead(self, request_key: str, plan_id: str, ref_code: str = "") -> dict:
+    def create_lead(self, request_key: str, plan_id: str, ref_code: str = "", *, details=None) -> dict:
         if plan_id not in PLAN_NAMES or not 12 <= len(request_key) <= 128:
             raise ReferralError("咨询信息不完整。")
+        details = consultation_details(details)
+        if plan_id == "date_addon_v7" and "date" not in details:
+            raise ReferralError("请先选择大运与年月日；费用由作者微信核对。")
         with self.db(write=True) as db:
+            if details.get("parent_id"):
+                parent = db.execute("SELECT plan_id,ref_code FROM leads WHERE id=?", (details["parent_id"],)).fetchone()
+                if parent:
+                    if parent["plan_id"] not in ("annual", "daily", "luck_v7", "date_v7"):
+                        raise ReferralError("该编号不是原局大运基础咨询，请联系作者核对。")
+                    ref_code = parent["ref_code"]  # Follow the original recommendation source.
             old = db.execute("SELECT * FROM leads WHERE request_key=?",(request_key,)).fetchone()
             if old:
-                if old["plan_id"]!=plan_id or old["ref_code"]!=ref_code:
+                saved = db.execute("SELECT document FROM lead_details WHERE lead_id=?", (old["id"],)).fetchone()
+                if old["plan_id"]!=plan_id or old["ref_code"]!=ref_code or (json.loads(saved[0]) if saved else {}) != details:
                     raise ReferralError("咨询请求内容不一致。")
                 return dict(old)
             if gate := self._security():
@@ -82,6 +93,8 @@ class PublicStore:
                 raise ReferralError("推广来源暂不可用，请联系作者核对。")
             cid = identifier("ZP")
             db.execute("INSERT INTO leads VALUES(?,?,?,?,?)",(cid,request_key,plan_id,ref_code,now()))
+            if details:
+                db.execute("INSERT INTO lead_details VALUES(?,?)", (cid,json.dumps(details,ensure_ascii=False)))
             return dict(db.execute("SELECT * FROM leads WHERE id=?",(cid,)).fetchone())
 
     def _session(self, db, code: str) -> str:

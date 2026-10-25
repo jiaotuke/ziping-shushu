@@ -15,7 +15,7 @@ from pillar_relationships import analyze_relationships
 from source_data import load_source_records
 
 wheel_chart = components.declare_component("ziping_professional_chart", path=str(Path(__file__).parent / "components" / "professional_chart"))
-PANEL_VERSION = "relations-3-stable-details"
+PANEL_VERSION = "relations-4-directed-and-hidden"
 
 
 def _render_relationship_sources() -> None:
@@ -25,6 +25,9 @@ def _render_relationship_sources() -> None:
         st.markdown("半合采用含中神的生旺、旺墓配对；申辰、亥未、寅戌、巳丑列为拱合配对。"
                     "同一组的半合与完整三合只说明不同参与位置，不累计折算力量。午未六合的化神暂不预定。")
         st.caption("‘已记录’表示有可核对的命盘线索，不代表合化条件通过。按原局、大运、流年、流月、流日分层；流月不替代出生月令。")
+        st.caption("天干生克及刑显示施方→受方。半会采用同会方任意两支配对，两端另标拱会；暗合采用寅丑、卯申、午亥。"
+                   "扩展配对参考china-testing/bazi，不按完整合会判化，也不把暗合等同婚恋隐情。")
+        st.caption("现实分析由模型结合柱位、十神、喜忌、根气和当前运程提出可能场景、成立条件与反证；关系本身不是具体事件结论。")
         quotes = ("譬如甲与己合，而甲己中间，以庚间隔之，则甲岂能越克我之庚而合己？",
                   "若以两合一而隔位，则全无争妒。", "是会合而不能解刑冲也。")
         try:

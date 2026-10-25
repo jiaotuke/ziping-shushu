@@ -22,8 +22,12 @@ if (!(Test-Path -LiteralPath $env:ZIPING_KEYSTORE)) {
     & "$env:JAVA_HOME\bin\keytool.exe" -genkeypair -alias ziping -keyalg RSA -keysize 3072 -validity 10000 -dname 'CN=ZipingShushu' -keystore $env:ZIPING_KEYSTORE '-storepass:env' ZIPING_KEYSTORE_PASSWORD '-keypass:env' ZIPING_KEYSTORE_PASSWORD *> "$zipingProject\.tmp\android-signing.log"
     if ($LASTEXITCODE -ne 0) { throw 'Android signing key creation failed.' }
 }
+$zipingNativePreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 & "$zipingProject\.tools\gradle\gradle-8.9\bin\gradle.bat" -p "$zipingProject\android\ziping-shushu" --no-daemon --console=plain assembleRelease *> "$zipingProject\.tmp\android-app-build.log"
-if ($LASTEXITCODE -ne 0) { throw 'Android build failed; see .tmp/android-app-build.log.' }
+$zipingBuildExit = $LASTEXITCODE
+$ErrorActionPreference = $zipingNativePreference
+if ($zipingBuildExit -ne 0) { throw 'Android build failed; see .tmp/android-app-build.log.' }
 New-Item -ItemType Directory -Force -Path "$zipingProject\dist" | Out-Null
 Copy-Item -LiteralPath "$zipingProject\android\ziping-shushu\app\build\outputs\apk\release\app-release.apk" -Destination "$zipingProject\dist\ZipingShushu-Android.apk"
 Write-Output "APK: $zipingProject\dist\ZipingShushu-Android.apk"

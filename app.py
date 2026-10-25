@@ -1,4 +1,4 @@
-"""八字排盘与四本古籍独立检索的 Streamlit 入门网页。"""
+"""八字排盘与五本命理文献独立检索的 Streamlit 网页。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from china_regions import load_regions
 from source_data import source_version
 
 PORTABLE_MODE = os.environ.get("ZIPING_PORTABLE") == "1"
-BOOK_NAMES = ["穷通宝鉴", "三命通会", "子平真诠", "滴天髓"]
+BOOK_NAMES = ["穷通宝鉴", "三命通会", "子平真诠", "滴天髓", "千里命稿"]
 RETRIEVAL_VERSION = "paragraphs-qiongtong-stem-month-2"
 
 # 模型缓存放在项目 D 盘目录，避免新下载默认进入 C 盘用户缓存。
@@ -382,6 +382,8 @@ def _render_book_original(
         st.caption("《三命通会》按日时组合、日干、日干生月、五行生月四层线索分别检索；结果是相关原文线索，仍需结合原文判断适用性。")
     elif book_name == "滴天髓" and book_mode == "day_stem_exact":
         st.caption("《滴天髓》按命盘日干精确定位‘七、天干’中的对应专论，依次展示正文、原注与任氏注。")
+    elif book_mode == "relationship_conditioned":
+        st.caption("《千里命稿》按当前原局的干支关系定位篇章和段落；字面命中或通则参考不代表适用条件已满足。报告生成时将另按对应大运及各流年引动关系检索。")
     elif book_mode == "chapter_conditioned":
         st.caption(f"已按《{book_name}》自身的篇章结构筛选候选篇，再在篇内排序；是否适用于此命盘仍需结合原文判断。")
     else:
@@ -913,7 +915,7 @@ if chart_result:
             book_tabs = dict(zip(BOOK_NAMES, st.tabs(BOOK_NAMES)))
             # Reading-tab order stays the same; exact lookups are completed
             # before the book that always needs semantic candidate ranking.
-            for book_name in ("穷通宝鉴", "三命通会", "滴天髓", "子平真诠"):
+            for book_name in ("穷通宝鉴", "三命通会", "滴天髓", "千里命稿", "子平真诠"):
                 with book_tabs[book_name]:
                     if book_name not in books_available:
                         st.info(f"《{book_name}》尚未录入书库。")
@@ -926,6 +928,8 @@ if chart_result:
                             )
                             book_results = book_output["results"]
                             book_modes[book_name] = book_output["mode"]
+                            if book_name == '千里命稿':
+                                retrieval_result['qianli_trace'] = book_output.get('trace',[])
                             if book_name == "穷通宝鉴":
                                 retrieval_result["annotation_issues"] = book_output["annotation_issues"]
                                 retrieval_result["retrieval_mode"] = book_output["mode"]
@@ -957,7 +961,7 @@ if chart_result:
         if not retrieval_ready:
             st.info("检索没有返回原文，因此 AI 解读暂不可用。")
         else:
-            book_tabs = st.tabs(["穷通宝鉴", "三命通会", "子平真诠", "滴天髓"])
+            book_tabs = st.tabs(BOOK_NAMES)
             for tab, book_name in zip(book_tabs, BOOK_NAMES):
                 with tab:
                     if book_name not in retrieval_result["books_available"]:

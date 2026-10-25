@@ -85,6 +85,9 @@ def _parse_source_records(path: Path, title: str, _version: tuple,
         from book_retrievers.ditian_sui import load_day_stem_records
 
         return tuple(load_day_stem_records(path))
+    if title == "千里命稿":
+        from book_retrievers.qianli_minggao import load_records
+        return tuple(load_records(path))
     lines = path.read_text(encoding="utf-8").splitlines()
     citation = "；".join(line[1:].strip() for line in lines if line.startswith("#"))
     records: list[dict[str, object]] = []

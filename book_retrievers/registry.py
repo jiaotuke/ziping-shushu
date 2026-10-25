@@ -1,12 +1,13 @@
 """按书名分派到各自检索逻辑；未知书名直接报错，避免静默套用别书规则。"""
 
-from . import ditian_sui, qiong_tong_bao_jian, sanming_tonghui, ziping_zhenquan
+from . import ditian_sui, qiong_tong_bao_jian, sanming_tonghui, ziping_zhenquan, qianli_minggao
 
 RETRIEVERS = {
     "穷通宝鉴": qiong_tong_bao_jian,
     "三命通会": sanming_tonghui,
     "子平真诠": ziping_zhenquan,
     "滴天髓": ditian_sui,
+    "千里命稿": qianli_minggao,
 }
 
 
