@@ -191,7 +191,7 @@ def trace_for_sources(context):
     trace = context.get('qianli_retrieval',{})
     available = {s['source_id'] for s in context['sources']}
     return {'version':trace.get('version',RETRIEVAL_VERSION),'note':trace.get('note',''),
-            'periods':[{'period':p['period'], 'corpus_unavailable':p.get('corpus_unavailable',False),
+            'periods':[{'period':p['period'],
                 'source_ids':sorted({sid for row in p['relations'] for sid in row['source_ids'] if sid in available}),
                 'unmatched_relations':[row['relation_id'] for row in p['relations'] if not row['candidate_count']],
                 'budget_omitted_relations':[row['relation_id'] for row in p['relations']

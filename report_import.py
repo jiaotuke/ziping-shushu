@@ -181,6 +181,8 @@ def import_report(raw, filename, *, chart, context, plan):
         artifact = _json(text)
     if "报告类型：时间专项（不含基础报告）" in text or isinstance(artifact, dict) and artifact.get("format") == "ziping-period-report-v1":
         raise AIError("这是仅含年／月／日专项的报告，不能代替原局大运基础报告。请导入单独下载的基础报告。")
+    if "【文风示例，不作实际报告导入】" in text or isinstance(artifact,dict) and (artifact.get("example") or isinstance(artifact.get("result"),dict) and artifact["result"].get("example")):
+        raise AIError("文风示例不是真实分析报告，不能导入为实际排盘的分析基线。")
     warnings, native_cycles, native_base = [], {}, None
     profile = birth_profile(chart)
     saved_profile = None

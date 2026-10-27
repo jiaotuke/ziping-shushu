@@ -26,7 +26,7 @@ def report_filename(report: dict) -> str:
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", "子平术数-"+pillars+"-"+scope)[:160].rstrip(" .")
 
 
-def report_exports(result: dict, sources: list[dict], *, title: str = "子平术数解读报告") -> dict[str, bytes]:
+def _professional_exports(result: dict, sources: list[dict], *, title: str = "子平术数解读报告") -> dict[str, bytes]:
     import base64
     import hashlib
     from luck_chart import dashboard_document, extended_html, extended_text, reasoning_html, results_html
@@ -40,8 +40,12 @@ def report_exports(result: dict, sources: list[dict], *, title: str = "子平术
     artifact = {"format": "ziping-period-report-v1" if period_only else "ziping-report-v4-importable", "exported_at": datetime.now().isoformat(timespec="seconds"),
                 "result": result, "sources": [{k: s.get(k, "") for k in
                 ("source_id", "book_name", "chapter", "line_number")} for s in sources]}
+    if result.get("example"):
+        artifact["example"] = True
     metadata = [title, "生成模型：" + str(result.get("model", "")),
                 "四柱：" + "　".join(str(report["pillars"].get(k, "")) for k in ("年柱", "月柱", "日柱", "时柱"))]
+    if result.get("example"):
+        metadata.insert(0,"【文风示例，不作实际报告导入】内容及分数为虚构演示，不是你的命盘分析。")
     if period_only:
         metadata.append("报告类型：时间专项（不含基础报告）")
     profile = result.get("birth_profile", {})
@@ -106,11 +110,40 @@ def report_exports(result: dict, sources: list[dict], *, title: str = "子平术
             "json": json.dumps(artifact, ensure_ascii=False, indent=2).encode("utf-8")}
 
 
-def render_report_downloads(result: dict, sources: list[dict], *, key: str) -> None:
+def report_exports(result: dict, sources: list[dict], *, title: str = "子平术数解读报告", edition: str = "professional") -> dict[str, bytes]:
+    if edition == "professional":
+        return _professional_exports(result,sources,title=title)
+    if edition != "beginner":
+        raise ValueError("Unsupported report edition")
+    from beginner_report import beginner_html, beginner_text
+    report = result["report"]
+    sources = list({s['source_id']:s for s in [*sources,*result.get('additional_sources',[])]}.values())
+    artifact = {"format":"ziping-period-report-v1" if report.get("kind")=="period-only" else "ziping-report-v4-importable",
+                "edition":"beginner", "exported_at":datetime.now().isoformat(timespec="seconds"), "result":result,
+                "sources":[{k:s.get(k,"") for k in ("source_id","book_name","chapter","line_number")} for s in sources]}
+    if result.get("example"):
+        artifact["example"] = True
+    profile = result.get("birth_profile", {})
+    metadata = [title+" · 小白版", "四柱："+"　".join(str(report["pillars"].get(k,"")) for k in ("年柱","月柱","日柱","时柱")),
+                "性别："+str(profile.get("gender") or "未记录"), "公历出生时刻："+str(profile.get("birth_datetime") or "未记录").replace('T',' ')]
+    if result.get("example"):
+        metadata.insert(0,"【文风示例，不作实际报告导入】内容及分数为虚构演示，不是你的命盘分析。")
+    snapshot = json.dumps(artifact, ensure_ascii=False).replace('&', '\\u0026').replace('<', '\\u003c').replace('>', '\\u003e')
+    page=('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+          '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'">'
+          '<title>'+html.escape(title+' · 小白版')+'</title><style>body{max-width:1000px;margin:24px auto;padding:0 16px;background:#101114;color:#eee}'
+          'header{font:12px/1.8 sans-serif;color:#aaa}@media print{body{background:white;color:#222}.reader,.reader h2,.reader h3,.reader h4{color:#222!important}.reader-section,.reader-card{background:white!important}details>*{display:block!important}}</style></head><body>'
+          '<header>'+'<br>'.join(html.escape(line) for line in metadata)+'</header>'+beginner_html(report,example=bool(result.get("example")))+
+          '<script id="ziping-report-snapshot" type="application/json">'+snapshot+'</script></body></html>')
+    text='\n'.join(metadata)+'\n\n'+beginner_text(report,example=bool(result.get("example")))
+    return {"html":page.encode('utf-8'),"txt":text.encode('utf-8-sig'),"json":json.dumps(artifact,ensure_ascii=False,indent=2).encode('utf-8')}
+
+
+def render_report_downloads(result: dict, sources: list[dict], *, key: str, edition: str = "professional") -> None:
     import streamlit as st
 
-    exports = report_exports(result, sources)
-    base = report_filename(result["report"])
+    exports = report_exports(result, sources, edition=edition)
+    base = ("示例-" if result.get("example") else "")+report_filename(result["report"])+("-小白版" if edition=="beginner" else "-专业版")
     period_only = result["report"].get("kind") == "period-only"
     st.markdown("#### 下载专项报告" if period_only else "#### 下载报告")
     for col, ext, label, mime in zip(st.columns(3), ("html", "txt", "json"),
@@ -118,9 +151,20 @@ def render_report_downloads(result: dict, sources: list[dict], *, key: str) -> N
                                     ("text/html", "text/plain", "application/json")):
         with col:
             st.download_button(label, exports[ext], file_name=f"{base}.{ext}", mime=mime,
-                               key=f"report_download_{key}_{ext}", use_container_width=True)
-    if result["report"].get("kind") == "period-only":
+                               key=f"report_download_{key}_{edition}_{ext}", use_container_width=True)
+    if edition == "beginner":
+        st.caption("HTML、TXT为小白版，结论与分数沿用专业分析；JSON及HTML中的导入数据保留完整专业内容，可供后续追加分析使用。")
+    elif result["report"].get("kind") == "period-only":
         st.caption("仅下载当前年／月／日专项及其依据；基础报告请在上方单独保存。专项文件不能替代基础报告导入。")
     else:
         st.caption("HTML 报告可离线点击 K 线切换大运，打印时包含全部大运与推导；也可另存为 PDF。文件不含模型密钥。")
         st.caption("JSON或新版HTML可恢复原局、大运及评分用于追加分析；旧版HTML和TXT也可按文字基线导入。")
+    if result.get("example"):
+        st.button("问问AI（文风示例不可提问）",disabled=True,key="ask_example_"+key)
+    elif st.button("问问AI",key="ask_report_"+key+"_"+edition,type="primary",use_container_width=True):
+        from report_chat_panel import open_report_chat
+        text=report_exports(result,sources,edition="professional")["txt"].decode("utf-8-sig")
+        open_report_chat(text,report_filename(result["report"]),return_screen="chart")
+    from customer_reports import render_collect_report
+    if not result.get("example"):
+        render_collect_report(exports, base, key=key+"_"+edition)

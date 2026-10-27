@@ -16,6 +16,7 @@ def render_paid_panel(chart, retrieval=None, *, transit=None, preview_only=False
     from referral_public_panel import render_consultation_ticket
     st.subheader("付费解读")
     st.caption("不熟悉 API 大模型操作，或想联系作者本人，可以添加作者的私人微信进行付费解读。")
+    st.caption("付费解读仅为模型调用技术支持")
     with st.container(border=True, key="consult_wechat_contact"):
         st.markdown("#### 作者私人微信")
         st.code(WECHAT_ID, language=None)

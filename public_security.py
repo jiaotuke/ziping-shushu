@@ -27,6 +27,9 @@ class CaptchaRequired(PublicSecurityError):
 
 
 POLICIES = {
+    'chat': ((6, 60), (100, 3600), (40, 60, 'global')),
+    'customer_register': ((3, 3600), (6, 86400), (100, 3600, 'global'), (500, 86400, 'global')),
+    'customer_save': ((15, 60), (200, 3600), (120, 60, 'global')),
     'login': ((15, 60), (60, 900), (120, 60, 'global')),
     'captcha': ((12, 60), (40, 900), (120, 60, 'global')),
     'consultation': ((3, 60), (20, 86400), (30, 60, 'global'), (500, 86400, 'global')),

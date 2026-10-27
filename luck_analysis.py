@@ -265,6 +265,8 @@ def validate_detail(document, focus, sources, stage):
             year.setdefault("citations", [])
             _number(year.get("delta"), -30, 30, "流年调整分")
             _text(year.get("reason"), "流年调整依据")
+            if "plain_reason" in year:
+                _text(year["plain_reason"], "年度白话说明")
     return _citations(document, sources, stage)
 
 
@@ -331,7 +333,7 @@ def _detail_messages(context, base, focus, facts, repair=None):
     if focus["level"] == "luck":
         schema["factors"] = [{"key": key, "score": "0–100数值，证据不足null", "reason": "得扣分的命盘机制、条文适用条件、反证",
                               "citations": [{"source_id": "S001", "quote": "连续原文"}]} for key, _, _ in FACTORS]
-        schema["years"] = [{"year": int(y["id"]), "delta": "-30至30数值，无法判断null", "reason": "相对大运基线的年度作用及反证",
+        schema["years"] = [{"year": int(y["id"]), "delta": "-30至30数值，无法判断null", "reason": "相对大运基线的年度作用及反证", "plain_reason": "同一作用原因的白话说明，不改分数",
                             "citations": [{"source_id": "S001", "quote": "连续原文"}]} for y in focus["cycle"]["years"]]
     schema["relation_implications"] = [{**copy.deepcopy(schema["relation_implications"][0]), "relation_id": r["id"]}
                                        for r in focus["relations"]["关系"] if r["范围"] == focus["level"]]

@@ -37,15 +37,15 @@ def _error(job):
 
 
 def _report(result, sources, key):
-    from luck_chart import render_extended
+    from beginner_report import render_reading_edition
     from report_downloads import render_report_downloads
     sources = list({s['source_id']:s for s in [*sources,*result.get('additional_sources',[])]}.values())
-    render_extended(result["report"], sources, key=key)
+    edition = render_reading_edition(result["report"], sources, key=key, example=bool(result.get("example")))
     imported = result.get("imported_basis", {})
     if imported.get("mode") == "narrative":
         with st.expander("查看本次复用的历史基础报告原文"):
             st.text(imported["text"])
-    render_report_downloads(result, sources, key=key)
+    render_report_downloads(result, sources, key=key, edition=edition)
     if result.get('retrieval_trace'):
         with st.expander("查看《千里命稿》各阶段／各年检索记录"):
             st.caption("列出各阶段及运内各年实际提供的原文编号；未找到条文或因预算省略会单独标明，命中不代表适用条件成立。")

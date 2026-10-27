@@ -5,7 +5,8 @@ import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = (
-    "app.py","public_app.py","public_security.py","ai_panel.py","ai_analysis.py","bazi.py","book_translation.py",
+    "report_chat.py", "report_chat_panel.py", "beginner_report.py", "customer_store.py", "customer_panel.py", "customer_reports.py",
+    "app.py","public_app.py","public_security.py","public_analytics.py","ai_panel.py","ai_analysis.py","bazi.py","book_translation.py",
     "analysis_workflow.py","analysis_workflow_panel.py","period_selection.py","period_text.py",
     "report_import.py","report_import_panel.py",
     "china_regions.py","citation_audit.py","luck_analysis.py","luck_chart.py","paid_analysis_panel.py",
@@ -26,6 +27,8 @@ def prepare(output: Path):
     files += ["data/annotations/conditions.json","data/annotations/ziping_chapters.json"]
     files += ["data/regions/"+name for name in ("china_regions.json","SOURCE.md","LICENSE-AreaCity.txt")]
     files += ["components/professional_chart/index.html","components/life_report/index.html",".streamlit/config.toml"]
+    if (ROOT / "data/source/千里命稿.txt").is_file():
+        files.append("data/source/千里命稿.txt")
     allowed = set(files)
     if output.exists():
         unexpected = []
@@ -43,7 +46,7 @@ def prepare(output: Path):
     for name in files:
         target = output / name
         target.parent.mkdir(parents=True,exist_ok=True)
-        if name == "app.py" and output.name != "public-site-v7":
+        if name == "app.py" and output.name not in {"public-site-v7", "customer-site-preview"}:
             content = (ROOT/name).read_text(encoding="utf-8")
             if "# Refresh changed modules" in content:
                 begin, end = content.index("# Refresh changed modules"), content.index("PORTABLE_MODE =")

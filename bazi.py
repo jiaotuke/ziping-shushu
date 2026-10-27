@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from lunar_python import Lunar, Solar
+from lunar_python import Lunar, LunarYear, Solar
 from lunar_python.util import LunarUtil
 from sanming_shensha import calculate_sanming_shensha
 
@@ -180,6 +180,15 @@ def find_pillar_birth_times(
     return tuple(sorted(matches, reverse=True))
 
 
+@lru_cache(maxsize=512)
+def lunar_months(year: int) -> tuple[tuple[int, int], ...]:
+    """Real months in order, with negative codes for leap months and actual lengths."""
+    if type(year) is not int or not 1 <= year <= 9999:
+        raise ValueError("请填写有效的农历年份。")
+    return tuple((month.getMonth(), month.getDayCount())
+                 for month in LunarYear.fromYear(year).getMonthsInYear())
+
+
 def calculate_lunar_chart(
     year: int,
     month: int,
@@ -192,7 +201,18 @@ def calculate_lunar_chart(
     sect: int = 2,
 ) -> dict[str, object]:
     """Accept a lunar date; in lunar-python, a negative month number means leap month."""
+    if type(month) is not int or not 1 <= month <= 12:
+        raise ValueError("请先选择农历月份。")
     signed_month = -month if is_leap_month else month
+    months = dict(lunar_months(year))
+    if signed_month not in months:
+        leap = next((-code for code in months if code < 0), None)
+        hint = f"该年闰{leap}月。" if leap else "该年没有闰月。"
+        raise ValueError(f"{year}年不存在所选的闰{month}月，{hint}请重新选择月份。")
+    maximum = months[signed_month]
+    if type(day) is not int or not 1 <= day <= maximum:
+        label = ("闰" if is_leap_month else "") + str(month) + "月"
+        raise ValueError(f"{year}年农历{label}只有{maximum}天，请重新选择出生日期。")
     try:
         lunar = Lunar.fromYmdHms(year, signed_month, day, hour, minute, second)
     except Exception as error:

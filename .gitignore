@@ -164,3 +164,11 @@
 !/skills/
 !/skills/**
 !/releases/v0.6.0/ziping-shushu-skill-v0.6.0.zip
+!/beginner_report.py
+!/customer_panel.py
+!/customer_reports.py
+!/customer_store.py
+!/docs/releases/2026-10-28-web.md
+!/public_analytics.py
+!/report_chat.py
+!/report_chat_panel.py

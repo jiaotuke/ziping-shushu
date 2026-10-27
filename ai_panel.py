@@ -30,6 +30,7 @@ def configured_api_key(provider: str = "zhipu") -> str:
 
 def render_ai_panel(chart: dict, retrieval: dict, *, preview_only: bool = False, preview_transit: dict | None = None) -> None:
     st.subheader("AI 解读")
+    st.markdown("**国学教育，仅供娱乐**")
     method = st.radio("解读方式", ["付费解读", "自备模型"], horizontal=True,
                       key="ai_service_mode_preview" if preview_only else "ai_service_mode")
     if method == "付费解读":

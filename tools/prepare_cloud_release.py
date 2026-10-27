@@ -12,7 +12,6 @@ from prepare_public_site import ROOT, prepare
 ASSETS = (
     "Dockerfile", ".dockerignore", "compose.yaml", "Caddyfile", ".env.example",
     "README.md", "maintenance/backup_public.py",
-    "maintenance/deploy_release.py",
     "maintenance/security_monitor.py",
 )
 

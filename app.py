@@ -82,6 +82,19 @@ st.markdown(
     .pillar-meta b { color: #e0d8c9; font-weight: 500; }
     .pillar-shensha { text-align: left; margin-top: 9px; padding-top: 9px; border-top: 1px solid #34353a;
         color: #e4c98f; font-size: .75rem; line-height: 1.7; }
+    [data-testid="stMain"]:has(#customer-chart-top) { overflow-anchor: none; }
+    .pillar-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    @media (max-width: 600px) {
+        .block-container { padding-left: 12px; padding-right: 12px; }
+        .pillar-grid { gap: 4px; }
+        .pillar-card { min-width: 0; min-height: 0; padding: 10px 4px; border-radius: 8px; }
+        .pillar-name { font-size: 12px; letter-spacing: 0; margin-bottom: 8px; }
+        .pillar-god { font-size: 11px; }
+        .pillar-glyph { font-size: 30px; }
+        .pillar-hidden { font-size: 9px; margin: 9px 0; padding: 7px 0; }
+        .pillar-hidden-row { gap: .15em; }
+        .pillar-meta, .pillar-shensha { font-size: 10px; overflow-wrap: anywhere; }
+    }
     .source-reading { padding: 8px 4px; color: #e2ddd2; font-family: "Noto Serif CJK SC", "Songti SC", serif;
         font-size: 1rem; line-height: 2; }
     .source-chapter-title { color: #ead7ad; margin: 0 0 .7rem; font-size: 1.15rem; }
@@ -92,7 +105,52 @@ st.markdown(
 )
 
 
+
+# Selection widgets suppress only the touch keyboard; text fields stay editable.
+st.html("""<script>
+(() => {
+  const stateKey = '__zipingTouchPickers';
+  window[stateKey]?.disconnect();
+  const selector = '[data-testid="stSelectbox"] input, [data-testid="stTimeInput"] input';
+  const mobile = window.matchMedia('(max-width: 900px) and (pointer: coarse)');
+  const update = input => {
+    if (mobile.matches) {
+      if (!input.hasAttribute('data-ziping-touch-picker')) {
+        input.dataset.zipingTouchPicker = input.readOnly ? 'readonly' : 'editable';
+        input.dataset.zipingOriginalInputmode = input.getAttribute('inputmode') ?? '';
+      }
+      if (!input.readOnly) input.readOnly = true;
+      if (input.getAttribute('inputmode') !== 'none') input.setAttribute('inputmode', 'none');
+    } else if (input.hasAttribute('data-ziping-touch-picker')) {
+      input.readOnly = input.dataset.zipingTouchPicker === 'readonly';
+      const original = input.dataset.zipingOriginalInputmode;
+      if (original) input.setAttribute('inputmode', original); else input.removeAttribute('inputmode');
+      delete input.dataset.zipingTouchPicker;
+      delete input.dataset.zipingOriginalInputmode;
+    }
+  };
+  const refresh = () => document.querySelectorAll(selector).forEach(update);
+  const beforeFocus = event => { if (event.target.matches?.(selector)) update(event.target); };
+  document.addEventListener('pointerdown', beforeFocus, true);
+  document.addEventListener('focusin', beforeFocus, true);
+  mobile.addEventListener('change', refresh);
+  const observer = new MutationObserver(refresh);
+  observer.observe(document.body, {childList: true, subtree: true});
+  window[stateKey] = {disconnect() {
+    observer.disconnect();
+    document.removeEventListener('pointerdown', beforeFocus, true);
+    document.removeEventListener('focusin', beforeFocus, true);
+    mobile.removeEventListener('change', refresh);
+  }};
+  refresh();
+})();
+</script>""", unsafe_allow_javascript=True)
+
 from referral_public_panel import render_navigation, render_agent_center
+from customer_panel import (render_customer_header, render_customer_account, capture_birth_state,
+                            apply_pending_birth, current_screen, restore_input_form, exit_chart, request_save_chart)
+if st.query_params.get("page", "chart") != "agent":
+    render_customer_header()
 
 st.markdown(
     """<div class="hero">
@@ -103,8 +161,21 @@ st.markdown(
     unsafe_allow_html=True,
 )
 workspace_page = render_navigation()
+if os.environ.get("ZIPING_PUBLIC_SITE") == "1":
+    from public_analytics import record_page
+    record_page(workspace_page)
 if workspace_page == "agent":
     render_agent_center()
+    st.stop()
+
+if os.environ.get("ZIPING_CUSTOMER_PREVIEW") == "1":
+    st.caption("账号与保存排盘功能 · 本地预览，数据仅存本机，尚未上传云端。")
+if current_screen() == "chat":
+    from report_chat_panel import render_report_chat
+    render_report_chat()
+    st.stop()
+if current_screen() == "account":
+    render_customer_account()
     st.stop()
 
 
@@ -217,8 +288,8 @@ def show_pillars(chart: dict) -> None:
         return element_colors[element]
 
     natal_shensha = chart.get("命局神煞", [])
-    columns = st.columns(4, gap="small")
-    for column, (name, pillar) in zip(columns, chart["四柱"].items()):
+    cards = []
+    for name, pillar in chart["四柱"].items():
         details = chart.get("四柱详情", {}).get(name, {})
         stem, branch = (pillar[0], pillar[1]) if len(pillar) >= 2 else ("—", "—")
         stem_color = color_for(stem, stem=True)
@@ -258,8 +329,8 @@ def show_pillars(chart: dict) -> None:
             f"<div><b>自坐</b>　{safe_self}</div></div>"
             f"<div class='pillar-shensha'><b>神煞</b><br>{shensha_html}</div></div>"
         )
-        with column:
-            st.markdown(card, unsafe_allow_html=True)
+        cards.append(card)
+    st.markdown("<div class='pillar-grid'>"+"".join(cards)+"</div>", unsafe_allow_html=True)
 
     st.caption("天干十神和藏干十神均以日干为基准；藏干按本气、中气、余气顺序显示。星运按日主看各柱地支，自坐按各柱天干看本柱地支。颜色按对应天干或地支的五行显示。")
     with st.expander("查看《三命通会》规则匹配到的命局神煞"):
@@ -309,6 +380,7 @@ def queue_analysis() -> None:
         from public_security import permit_ui_action
         if not permit_ui_action("chart"):
             return
+        st.session_state.pop("chart_error", None)
         st.session_state["analysis_requested"] = True
         st.session_state["analysis_running"] = True
 
@@ -504,12 +576,21 @@ def _render_book_original(
         render_result(result, rank)
 
 
+def render_birth_feedback() -> None:
+    if notice := st.session_state.pop("_public_security_notice", None):
+        st.warning(notice)
+    if error := st.session_state.get("chart_error"):
+        st.error(error)
+
+
 @st.fragment
 def render_birth_form() -> None:
     """Keep ordinary input changes inside this small, independently rerun area."""
     st.markdown("### 出生日期与时间")
     calendar_type = st.radio("历法", ["公历", "农历", "四柱八字"], horizontal=True, label_visibility="collapsed", key="calendar_type")
     gender = st.radio("性别", ["男", "女"], index=None, horizontal=True, key="birth_gender")
+    if not gender:
+        st.caption("请先选择性别，否则“开始排盘”按钮不可用。")
     if calendar_type == "四柱八字":
         from lunar_python.util import LunarUtil
 
@@ -578,6 +659,7 @@ def render_birth_form() -> None:
                             or not all(manual_pillars.values())
                             or (len(birth_candidates) > 1 and not professional_birth)),
                   on_click=queue_analysis, key="start_analysis")
+        render_birth_feedback()
         if st.session_state.get("analysis_running", False):
             st.info("正在排盘，请稍候……")
         st.session_state["birth_form"] = {"calendar_type": calendar_type, "pillars": manual_pillars,
@@ -586,7 +668,7 @@ def render_birth_form() -> None:
             st.session_state["analysis_dispatching"] = True
             st.rerun()
         return
-    date_col, time_col = st.columns([2.2, 1], vertical_alignment="bottom")
+    date_col, time_col = st.columns([2.2, 1], vertical_alignment="top")
     with date_col:
         if calendar_type == "公历":
             initial_date = st.session_state.get("birth_date", date(1990, 1, 1))
@@ -606,26 +688,47 @@ def render_birth_form() -> None:
             birth_date = date(birth_year, birth_month, birth_day)
             lunar_year, lunar_month, lunar_day, is_leap_month = 1990, 1, 1, False
         else:
+            from bazi import lunar_months
             birth_date = None
             lunar_cols = st.columns([1.3, 1, 1], vertical_alignment="bottom")
             with lunar_cols[0]:
                 lunar_year = st.selectbox("出生年份", list(range(1800, 2201)), index=190, key="lunar_birth_year")
+            month_days = dict(lunar_months(lunar_year))
+            month_codes = list(month_days)
+            previous_month = st.session_state.get("lunar_birth_month", 1)
+            if st.session_state.pop("is_leap_month", False) and previous_month:
+                previous_month = -abs(previous_month)
+                st.session_state["lunar_birth_month"] = previous_month
+            if previous_month is not None and previous_month not in month_codes:
+                st.session_state["lunar_birth_month"] = None
+                st.caption("原选月份在该农历年不存在，请重新选择月份。")
             with lunar_cols[1]:
                 month_names = ("正月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "冬月", "腊月")
-                lunar_month = st.selectbox("农历月", list(range(1, 13)),
-                                           index=int(st.session_state.get("lunar_month", 1)) - 1,
-                                           format_func=lambda m: month_names[m - 1], key="lunar_birth_month")
+                signed_month = st.selectbox("农历月", month_codes,
+                                           index=None if st.session_state.get("lunar_birth_month", 1) is None else 0,
+                                           format_func=lambda m: ("闰" if m < 0 else "") + month_names[abs(m) - 1],
+                                           key="lunar_birth_month", placeholder="请选择农历月份")
+            lunar_month = abs(signed_month) if signed_month is not None else None
+            is_leap_month = bool(signed_month is not None and signed_month < 0)
+            available_days = list(range(1, month_days[signed_month]+1)) if signed_month is not None else []
+            if st.session_state.get("lunar_birth_day", 1) not in available_days:
+                st.session_state["lunar_birth_day"] = None
+                if available_days:
+                    st.caption(f"该月只有{available_days[-1]}天，原选日期已清空，请重新选择农历日。")
             with lunar_cols[2]:
                 day_names = ("初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十",
                              "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
                              "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十")
-                lunar_day = st.selectbox("农历日", list(range(1, 31)),
-                                         index=int(st.session_state.get("lunar_day", 1)) - 1,
-                                         format_func=lambda d: day_names[d - 1], key="lunar_birth_day")
+                lunar_day = st.selectbox("农历日", available_days,
+                                         index=None if st.session_state.get("lunar_birth_day", 1) is None else 0,
+                                         format_func=lambda d: day_names[d - 1], key="lunar_birth_day",
+                                         disabled=not available_days, placeholder="请选择农历日期")
     with time_col:
         birth_time = st.time_input("出生时刻", value=time(12, 0), key="birth_time")
-    if calendar_type == "农历":
-        is_leap_month = st.checkbox("闰月", key="is_leap_month", help="出生月份属于当年的闰月时勾选。")
+    if calendar_type == "农历" and signed_month is not None:
+        leap = next((-code for code in month_codes if code < 0), None)
+        st.caption(f"所选月份共{month_days[signed_month]}天。" +
+                   (f"该年闰{month_names[leap-1]}，闰月已列在月份选项中。" if leap else "该年没有闰月。"))
 
     st.markdown("### 出生地点")
     location = None
@@ -716,10 +819,12 @@ def render_birth_form() -> None:
         "开始排盘",
         type="primary",
         use_container_width=True,
-        disabled=st.session_state.get("analysis_running", False) or not gender,
+        disabled=(st.session_state.get("analysis_running", False) or not gender
+                  or (calendar_type == "农历" and (lunar_month is None or lunar_day is None))),
         on_click=queue_analysis,
         key="start_analysis",
     )
+    render_birth_feedback()
     if st.session_state.get("analysis_running", False):
         st.info("正在排盘，请稍候……")
     st.session_state["birth_form"] = {
@@ -727,8 +832,8 @@ def render_birth_form() -> None:
         "gender": gender,
         "birth_date": birth_date,
         "lunar_year": int(lunar_year),
-        "lunar_month": int(lunar_month),
-        "lunar_day": int(lunar_day),
+        "lunar_month": int(lunar_month) if lunar_month is not None else None,
+        "lunar_day": int(lunar_day) if lunar_day is not None else None,
         "is_leap_month": is_leap_month,
         "birth_time": birth_time,
         "use_true_solar_time": use_true_solar_time,
@@ -740,15 +845,17 @@ def render_birth_form() -> None:
         st.rerun()
 
 
-if security_notice := st.session_state.pop("_public_security_notice", None):
-    st.warning(security_notice)
-render_birth_form()
-form_data = st.session_state.get("birth_form", {})
-submitted = bool(st.session_state.pop("analysis_requested", False))
+loaded_birth_form = apply_pending_birth()
+if current_screen() == "input" and not loaded_birth_form:
+    restore_input_form()
+    render_birth_form()
+form_data = loaded_birth_form or st.session_state.get("birth_form", {})
+submitted = bool(st.session_state.pop("analysis_requested", False) or loaded_birth_form)
 if submitted:
     st.session_state["analysis_dispatching"] = False
     st.session_state.pop("chart_result", None)
     st.session_state.pop("retrieval_result", None)
+    st.session_state.pop("saved_birth_state", None)
 
 if submitted:
     try:
@@ -785,24 +892,38 @@ if submitted:
             "chart": chart,
             "correction": correction,
         }
+        st.session_state["saved_birth_state"] = capture_birth_state(form_data)
+        st.session_state["customer_screen"] = "chart"
+        st.session_state["customer_scroll_chart"] = True
         st.session_state.pop("retrieval_result", None)
         st.session_state.pop("retrieval_error", None)
         st.session_state["active_panel"] = None
         st.session_state.pop("chart_error", None)
     except Exception as error:
         st.session_state["chart_error"] = f"排盘时遇到问题：{error}"
+        st.session_state["customer_screen"] = "input"
+        if loaded_birth_form:
+            from customer_store import birth_input_key
+            st.session_state["customer_draft_inputs"] = {
+                key: value for key,value in st.session_state.items() if birth_input_key(key)
+            }
+            st.session_state["customer_restore_inputs"] = True
+            st.session_state["customer_restore_draft"] = True
     finally:
         st.session_state["analysis_running"] = False
     st.rerun()
 
-if error_message := st.session_state.get("chart_error"):
-    st.error(error_message)
-
 chart_result = st.session_state.get("chart_result")
-if chart_result:
+if chart_result and current_screen() == "chart":
     chart = chart_result["chart"]
     refresh_legacy_chart_details(chart)
     st.divider()
+    st.markdown('<div id="customer-chart-top"></div>', unsafe_allow_html=True)
+    if st.session_state.pop("customer_scroll_chart", False):
+        st.html("""<script>setTimeout(()=>document.getElementById('customer-chart-top')?.scrollIntoView({block:'start',behavior:'smooth'}),150);</script>""", unsafe_allow_javascript=True)
+    with st.container(key="chart_toolbar", horizontal=True, horizontal_alignment="right"):
+        st.button("退出排盘",key="customer_exit_chart",on_click=exit_chart)
+        st.button("保存排盘",key="customer_save_chart_button",type="primary",on_click=request_save_chart)
     st.subheader("四柱排盘")
     basic_tab, professional_tab = st.tabs(["基础排盘", "专业细盘"])
     with basic_tab:
@@ -810,25 +931,26 @@ if chart_result:
     with professional_tab:
         import professional_panel as professional_panel_module
         professional_panel_module.render_professional_chart(chart)
-    if chart.get("输入历法") == "四柱八字":
-        st.caption("四柱输入：" + "　".join(f"{name} {pillar}" for name, pillar in chart["四柱"].items())
-                   + "｜直接按输入四柱排盘")
-        if chart.get("专业出生时刻"):
-            st.caption(f"大运采用匹配日期与时柱默认时刻：{chart['专业出生时刻']}；起运时刻按此默认值计算。")
-    else:
-        st.caption(
-            f"出生信息：{chart.get('输入历法', '公历')} {chart.get('输入出生时间')}｜"
-            f"地点：{chart.get('输入地点', '未填写')}｜排盘采用时刻：{chart.get('公历')}｜"
-            f"{chart.get('时间说明')}"
-        )
+    with st.expander("查看出生资料与时间修正"):
+        if chart.get("输入历法") == "四柱八字":
+            st.caption("四柱输入：" + "　".join(f"{name} {pillar}" for name, pillar in chart["四柱"].items())
+                       + "｜直接按输入四柱排盘")
+            if chart.get("专业出生时刻"):
+                st.caption(f"大运采用匹配日期与时柱默认时刻：{chart['专业出生时刻']}；起运时刻按此默认值计算。")
+        else:
+            st.caption(
+                f"出生信息：{('农历 '+chart.get('输入农历日期', '')+'（公历 '+str(chart.get('输入出生时间'))+'）') if chart.get('输入历法') == '农历' else ('公历 '+str(chart.get('输入出生时间')))}｜"
+                f"地点：{chart.get('输入地点', '未填写')}｜排盘采用时刻：{chart.get('公历')}｜"
+                f"{chart.get('时间说明')}"
+            )
 
-    correction = chart_result["correction"]
-    if correction:
-        with st.expander("查看时间修正详情"):
-            st.write(f"出生地时区：{correction['时区']}（该日期 UTC 偏移 {correction['UTC偏移']:+g} 小时）")
-            st.write(f"经度：{correction['经度']:+g}°；均时差：{correction['均时差分钟']:+.2f} 分钟")
-            st.write(f"当地钟表时间：{correction['当地钟表时间']}；修正后：{correction['真太阳时']}")
-            st.write(f"修正前四柱：{correction['原始排盘']['四柱']}")
+        correction = chart_result["correction"]
+        if correction:
+            with st.expander("查看时间修正详情"):
+                st.write(f"出生地时区：{correction['时区']}（该日期 UTC 偏移 {correction['UTC偏移']:+g} 小时）")
+                st.write(f"经度：{correction['经度']:+g}°；均时差：{correction['均时差分钟']:+.2f} 分钟")
+                st.write(f"当地钟表时间：{correction['当地钟表时间']}；修正后：{correction['真太阳时']}")
+                st.write(f"修正前四柱：{correction['原始排盘']['四柱']}")
 
     retrieval_result = st.session_state.get("retrieval_result")
     current_sources = source_version()
@@ -983,8 +1105,9 @@ if chart_result:
     elif not retrieval_ready:
         st.caption("四柱已排出。点击“古籍检索”查看原文；检索成功后可继续使用“AI 解读”。")
 
-with st.expander("关于当前版本"):
-    st.write("这是本机学习版网页。出生地点通过省、市、县区逐级选择；真太阳时修正使用所选区县中心的经度和对应时区。")
-    st.write("《穷通宝鉴》按日干与月令直接定位正文；原文中的具体条件仍需结合命盘核对。")
-    st.write("排盘由 lunar-python 计算；专业细盘支持运程浏览及原局与运年月日关系。AI 解读可选择智谱或 DeepSeek，默认分析原局，也可结合当前选定运年、流月、流日及古籍资料。")
-    st.caption("行政区列表使用随项目提供的本地数据，来源与版本见 data/regions/SOURCE.md。区县中心坐标为近似位置，不代表具体出生医院。")
+if current_screen() == "input":
+    with st.expander("关于当前版本"):
+        st.write("这是本机学习版网页。出生地点通过省、市、县区逐级选择；真太阳时修正使用所选区县中心的经度和对应时区。")
+        st.write("《穷通宝鉴》按日干与月令直接定位正文；原文中的具体条件仍需结合命盘核对。")
+        st.write("排盘由 lunar-python 计算；专业细盘支持运程浏览及原局与运年月日关系。AI 解读可选择智谱或 DeepSeek，默认分析原局，也可结合当前选定运年、流月、流日及古籍资料。")
+        st.caption("行政区列表使用随项目提供的本地数据，来源与版本见 data/regions/SOURCE.md。区县中心坐标为近似位置，不代表具体出生医院。")
